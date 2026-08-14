@@ -1,0 +1,118 @@
+<h2>选择像素视觉风格</h2>
+<p class="subtitle">三种复古像素风格方向（含机甲动态预览），点击卡片选择，风格将应用到机甲、场景和 UI</p>
+
+<div class="cards">
+  <div class="card" data-choice="8bit" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#0d0d0d;padding:8px 0">
+      <canvas class="pv" id="c8" width="120" height="160" data-style="8bit"></canvas>
+    </div>
+    <div class="card-body">
+      <h3>A · 8-bit 复古（FC/NES 风）</h3>
+      <p>限制 5 色调色板、大像素块、高对比度、纯色背景。粗犷怀旧，实现最简单。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="16bit" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:linear-gradient(#1a1c2c,#29366f);padding:8px 0">
+      <canvas class="pv" id="c16" width="120" height="160" data-style="16bit"></canvas>
+    </div>
+    <div class="card-body">
+      <h3>B · 16-bit 精致（SFC/GBA 风）</h3>
+      <p>多级色阶渐变、更细的像素颗粒、夜空渐变场景。细节丰富，经典机甲游戏质感。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="neon" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#12071f;padding:8px 0">
+      <canvas class="pv" id="cn" width="120" height="160" data-style="neon"></canvas>
+    </div>
+    <div class="card-body">
+      <h3>C · 现代霓虹（赛博风）</h3>
+      <p>紫青霓虹配色、发光效果、扫描线与网格地平线。机甲科技感最强。</p>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  // 机甲像素图（12x16）: . 透明 | O 轮廓 | D 深甲 | M 中甲 | L 亮甲 | E 眼 | V 能量核 | J 关节
+  var ART = [
+    "....O..O....",
+    "....V..V....",
+    "...OOOOOO...",
+    "..OMMMMMMO..",
+    "..OMEEEEMO..",
+    "..OMMMMMMO..",
+    "...OOOOOO...",
+    ".OOOOMMOOOO.",
+    "ODDOMMMMODDO",
+    "ODDMMVVMMDDO",
+    "ODDMLVLLMDDO",
+    "ODDMMMMMMDDO",
+    "..OOMMMMOO..",
+    "..OMM..MMO..",
+    "..OMM..MMO..",
+    ".OJJO..OJJO."
+  ];
+  var PAL = {
+    "8bit":  {O:"#111111",D:"#333944",M:"#5a6472",L:"#a8b2c0",E:"#ff4136",V:"#ffdc00",J:"#222222"},
+    "16bit": {O:"#1a1c2c",D:"#3b5dc9",M:"#5d7ce8",L:"#9bb9ff",E:"#41fff0",V:"#ffd75e",J:"#29366f"},
+    "neon":  {O:"#160b26",D:"#4b2d73",M:"#7a4fd0",L:"#c29bff",E:"#00f5d4",V:"#ff2e97",J:"#2d1b4e"}
+  };
+  var PX = 8, W = ART[0].length, H = ART.length;
+
+  function draw(ctx, style, t){
+    var pal = PAL[style];
+    ctx.clearRect(0,0,ctx.canvas.width,ctx.canvas.height);
+    // 场景
+    if(style === "8bit"){
+      ctx.fillStyle = "#ffffff";
+      for(var s=0;s<14;s++){ var x=(s*37)%ctx.canvas.width, y=(s*23)%60; ctx.globalAlpha=0.6; ctx.fillRect(x,y,2,2); }
+      ctx.globalAlpha=1;
+    }
+    if(style === "16bit"){
+      ctx.fillStyle = "#b8b8ff";
+      for(var s2=0;s2<14;s2++){ var x2=(s2*37)%ctx.canvas.width, y2=(s2*29)%50; ctx.globalAlpha=0.7; ctx.fillRect(x2,y2,1,1); }
+      ctx.globalAlpha=1;
+      ctx.fillStyle="#0e0f1c"; ctx.fillRect(0,140,ctx.canvas.width,20); // 地面剪影
+    }
+    if(style === "neon"){
+      ctx.strokeStyle = "rgba(255,46,151,0.25)";
+      ctx.lineWidth = 1;
+      for(var g=0; g<6; g++){ var gy = 140 - g*g*4; ctx.beginPath(); ctx.moveTo(0,gy); ctx.lineTo(ctx.canvas.width,gy); ctx.stroke(); }
+      // 扫描线
+      ctx.fillStyle = "rgba(0,0,0,0.22)";
+      for(var y3=0; y3<ctx.canvas.height; y3+=3){ ctx.fillRect(0,y3,ctx.canvas.width,1); }
+    }
+    // 机甲（浮动）
+    var bob = Math.round(Math.sin(t/400)*1.5); // 像素级浮动
+    var pulse = 0.5 + 0.5*Math.sin(t/220);
+    for(var r=0;r<H;r++){
+      for(var c=0;c<W;c++){
+        var ch = ART[r][c];
+        if(ch === ".") continue;
+        var col = pal[ch];
+        if((ch === "V" || ch === "E") && style === "neon"){
+          ctx.shadowBlur = 8; ctx.shadowColor = col;
+        } else if(ch === "V"){
+          ctx.globalAlpha = 0.75 + 0.25*pulse;
+        }
+        ctx.fillStyle = col;
+        ctx.fillRect(c*PX, r*PX + bob, PX, PX);
+        ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+      }
+    }
+  }
+  var canvases = document.querySelectorAll("canvas.pv");
+  Array.prototype.forEach.call(canvases, function(cv){
+    cv.style.width = "100%"; cv.style.maxWidth = "160px"; cv.style.imageRendering = "pixelated";
+  });
+  function loop(t){
+    draw(document.getElementById("c8").getContext("2d"), "8bit", t);
+    draw(document.getElementById("c16").getContext("2d"), "16bit", t);
+    draw(document.getElementById("cn").getContext("2d"), "neon", t);
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+})();
+</script>
