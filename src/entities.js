@@ -130,7 +130,8 @@
 
   Zombie.prototype.update = function (dt, game) {
     const now = game.time;
-    this.walkPhase += dt * 3;
+    // 步频与移动速度挂钩：走得越快腿迈得越快
+    this.walkPhase += dt * (2.2 + this.curSpeed(now) * 0.14);
 
     if (this.state === Z_STATE.DIE) {
       this.dieT += dt;
@@ -205,9 +206,22 @@
       ctx.globalAlpha = Math.max(0, alpha);
     }
 
-    const bob = this.state === Z_STATE.WALK ? Math.sin(this.walkPhase) * 2.5 : 0;
-    const sway = this.state === Z_STATE.WALK ? Math.sin(this.walkPhase) * 0.04 : 0;
-    S.draw(ctx, def.sprite, x, y + bob, this.w, this.h, sway);
+    // 步态动画：行走时身体起伏+左右摇摆+前后微蹭；啃食时俯冲抖动；跳跃时后仰
+    let bob = 0, dx = 0;
+    if (this.state === Z_STATE.WALK) {
+      const ph = this.walkPhase;
+      bob = -Math.abs(Math.sin(ph)) * 5;          // 脚步起伏
+      rot = Math.sin(ph) * 0.1;                    // 身体左右摇
+      dx = Math.sin(ph) * 3;                       // 重心前后蹭
+    } else if (this.state === Z_STATE.EAT) {
+      const ph = this.walkPhase * 4;
+      rot = 0.12 + Math.sin(ph) * 0.07;            // 低头啃咬
+      bob = Math.sin(ph) * 1.6;
+      dx = Math.sin(ph) * 2;
+    } else if (this.state === Z_STATE.JUMP) {
+      rot = -0.22;                                 // 腾空后仰
+    }
+    S.draw(ctx, def.sprite, x + dx, y + bob, this.w, this.h, rot);
 
     // 冰冻减速特效
     if (now < this.slowUntil && this.state !== Z_STATE.DIE) {
@@ -377,18 +391,35 @@
 
   Mower.prototype.render = function (ctx, now) {
     if (this.done) return;
-    const x = this.x, y = this.y + 8;
+    // 触发后机身高频抖动
+    const shake = this.triggered ? Math.sin(now * 55) * 1.4 : 0;
+    const x = this.x, y = this.y + 8 + shake;
     ctx.save();
-    // 车轮
-    ctx.fillStyle = '#263238';
-    ctx.beginPath(); ctx.arc(x - 14, y + 14, 9, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(x + 12, y + 14, 9, 0, Math.PI * 2); ctx.fill();
-    // 轮毂
-    ctx.fillStyle = '#90a4ae';
-    ctx.beginPath(); ctx.arc(x - 14, y + 14, 4, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(x + 12, y + 14, 4, 0, Math.PI * 2); ctx.fill();
-    // 机身
-    ctx.fillStyle = '#e53935';
+    // 车轮（触发后辐条旋转）
+    const wheelAngle = this.triggered ? now * 28 : 0;
+    const wheels = [-14, 12];
+    for (let i = 0; i < 2; i++) {
+      const wx = x + wheels[i], wy = y + 14;
+      ctx.fillStyle = '#263238';
+      ctx.beginPath(); ctx.arc(wx, wy, 9, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#546e7a'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(wx, wy, 9, 0, Math.PI * 2); ctx.stroke();
+      // 旋转辐条（两根十字线 + 轮毂）
+      ctx.save();
+      ctx.translate(wx, wy);
+      ctx.rotate(wheelAngle);
+      ctx.strokeStyle = '#b0bec5'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(-6, 0); ctx.lineTo(6, 0); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, -6); ctx.lineTo(0, 6); ctx.stroke();
+      ctx.fillStyle = '#eceff1';
+      ctx.beginPath(); ctx.arc(0, 0, 2.5, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+    // 机身（渐变+高光）
+    const bodyGrad = ctx.createLinearGradient(0, y - 12, 0, y + 12);
+    bodyGrad.addColorStop(0, '#ef5350');
+    bodyGrad.addColorStop(1, '#b71c1c');
+    ctx.fillStyle = bodyGrad;
     ctx.beginPath();
     ctx.moveTo(x - 22, y + 12);
     ctx.lineTo(x - 18, y - 8);
@@ -396,6 +427,8 @@
     ctx.lineTo(x + 22, y + 12);
     ctx.closePath();
     ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    ctx.fillRect(x - 16, y - 6, 30, 3); // 高光条
     // 手柄
     ctx.strokeStyle = '#546e7a';
     ctx.lineWidth = 3;
@@ -403,7 +436,7 @@
     ctx.moveTo(x + 14, y - 9);
     ctx.lineTo(x + 24, y - 22);
     ctx.stroke();
-    // 触发时刀盘旋转特效
+    // 触发时刀盘旋转特效 + 尾气尘土
     if (this.triggered) {
       ctx.strokeStyle = 'rgba(200,230,255,0.7)';
       ctx.lineWidth = 2;
@@ -411,6 +444,14 @@
       ctx.beginPath();
       ctx.arc(x - 2, y + 2, 20, a, a + 2);
       ctx.stroke();
+      // 尾部尘土
+      ctx.fillStyle = 'rgba(160,140,100,0.35)';
+      for (let i = 0; i < 3; i++) {
+        const r = 5 + ((now * 8 + i * 7) % 10);
+        ctx.beginPath();
+        ctx.arc(x - 30 - i * 12, y + 12 + Math.sin(now * 9 + i) * 3, r * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
     ctx.restore();
   };

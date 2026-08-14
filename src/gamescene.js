@@ -4,6 +4,7 @@
   const PVZ = root.PVZ = root.PVZ || {};
   const S = PVZ.sprites;
   const C = PVZ.core;
+  const P = PVZ.platform;
   const BOARD = PVZ.BOARD;
 
   const STATE = { READY: 0, PLAYING: 1, WON: 2, LOST: 3 };
@@ -14,10 +15,19 @@
     this.restart();
   }
 
+  // 会话级速度记忆（跨关卡保持）
+  PVZ._speed = PVZ._speed || 1;
+
+  // 速度档位：1.0 ~ 5.0，步长 0.5
+  const SPEED_OPTIONS = [];
+  for (let v = 1; v <= 5.001; v += 0.5) SPEED_OPTIONS.push(Math.round(v * 10) / 10);
+
   GameScene.prototype.restart = function () {
     const lv = this.level;
     this.state = STATE.READY;
     this.time = 0;
+    this.speed = PVZ._speed;      // 游戏速度倍率
+    this.speedPicker = false;     // 速度选择浮层
     this.sun = lv.sunStart;
     this.sunTimer = 3;             // 首个天降阳光
     this.plants = [];              // Plant[]
@@ -49,6 +59,9 @@
     this.popupT = 0;
     this.banner = null;            // 顶部横幅提示 {text, t}
     this.bannerT = 0;
+
+    // 预渲染背景
+    this.buildBackground();
   };
 
   /* ================= 波次 ================= */
@@ -169,19 +182,22 @@
   GameScene.prototype.update = function (dt) {
     if (this.popup) { this.popupT += dt; return; }
 
-    this.time += dt;
+    // 速度倍率：游戏逻辑统一加速；横幅提示用真实时间
+    const spd = this.speed;
+    const sdt = dt * spd;
+    this.time += sdt;
     const lv = this.level;
 
     /* --- 阶段推进 --- */
     if (this.state === STATE.READY) {
-      this.readyT -= dt;
+      this.readyT -= sdt;
       if (this.readyT <= 0) {
         this.state = STATE.PLAYING;
         this.startWave();
       }
     } else if (this.state === STATE.PLAYING) {
       // 天降阳光
-      this.sunTimer -= dt;
+      this.sunTimer -= sdt;
       if (this.sunTimer <= 0) {
         this.sunTimer = lv.sunRate * (0.8 + Math.random() * 0.4);
         this.spawnSun(BOARD.x + 30 + Math.random() * (BOARD.width - 60), -30, true);
@@ -190,7 +206,7 @@
       // 波次推进
       if (this.waveQueue.length > 0) {
         const next = this.waveQueue[0];
-        next.delay -= dt;
+        next.delay -= sdt;
         if (next.delay <= 0) {
           this.waveQueue.shift();
           const row = Math.floor(Math.random() * BOARD.rows);
@@ -211,12 +227,16 @@
       }
     }
 
-    /* --- 实体更新 --- */
-    for (let i = 0; i < this.plants.length; i++) this.plants[i].update(dt, this);
-    for (let i = 0; i < this.zombies.length; i++) this.zombies[i].update(dt, this);
-    for (let i = 0; i < this.bullets.length; i++) this.bullets[i].update(dt, this);
-    for (let i = 0; i < this.suns.length; i++) this.suns[i].update(dt, this);
-    for (let i = 0; i < this.mowers.length; i++) this.mowers[i].update(dt, this);
+    /* --- 实体更新（子步积分：高倍速下防子弹穿透/步态失真） --- */
+    const steps = Math.max(1, Math.min(12, Math.ceil(sdt / 0.034)));
+    const sub = sdt / steps;
+    for (let s = 0; s < steps; s++) {
+      for (let i = 0; i < this.plants.length; i++) this.plants[i].update(sub, this);
+      for (let i = 0; i < this.zombies.length; i++) this.zombies[i].update(sub, this);
+      for (let i = 0; i < this.bullets.length; i++) this.bullets[i].update(sub, this);
+      for (let i = 0; i < this.suns.length; i++) this.suns[i].update(sub, this);
+      for (let i = 0; i < this.mowers.length; i++) this.mowers[i].update(sub, this);
+    }
 
     // 清理
     this.plants = this.plants.filter(function (p) { return !p.dead; });
@@ -225,12 +245,12 @@
     this.suns = this.suns.filter(function (s) { return !s.dead; });
 
     // 特效
-    for (let i = 0; i < this.effects.length; i++) this.effects[i].t += dt;
+    for (let i = 0; i < this.effects.length; i++) this.effects[i].t += sdt;
     this.effects = this.effects.filter(function (e) { return e.t < e.dur; });
 
     // 卡片冷却
     for (let i = 0; i < this.cards.length; i++) {
-      if (this.cards[i].cooldown > 0) this.cards[i].cooldown = Math.max(0, this.cards[i].cooldown - dt);
+      if (this.cards[i].cooldown > 0) this.cards[i].cooldown = Math.max(0, this.cards[i].cooldown - sdt);
     }
 
     // 割草机触发 & 失败判定
@@ -299,6 +319,24 @@
   GameScene.prototype.onDown = function (x, y) {
     if (this.popup) { this.handlePopupTap(x, y); return; }
 
+    // 0. 速度选择浮层（打开时优先拦截）
+    if (this.speedPicker) {
+      const panel = this.speedPickerRect();
+      let handled = false;
+      if (y >= panel.y && y <= panel.y + panel.h && x >= panel.x && x <= panel.x + panel.w) {
+        const idx = Math.floor((x - panel.x - 6) / 48);
+        if (idx >= 0 && idx < SPEED_OPTIONS.length) {
+          this.speed = SPEED_OPTIONS[idx];
+          PVZ._speed = this.speed;
+          C.Sfx.play('click');
+          handled = true;
+        }
+      }
+      this.speedPicker = false;
+      if (handled) return;
+      // 点在面板外：落到按钮/棋盘逻辑（速度按钮 toggle 在下面处理）
+    }
+
     // 1. 收集阳光
     for (let i = this.suns.length - 1; i >= 0; i--) {
       const s = this.suns[i];
@@ -314,7 +352,14 @@
     }
 
     // 2. 暂停按钮
-    if (x > 912 && y < 44) { this.popup = 'pause'; this.popupT = 0; C.Sfx.play('click'); return; }
+    if (x > 900 && y < 44) { this.popup = 'pause'; this.popupT = 0; C.Sfx.play('click'); return; }
+
+    // 2.5 速度按钮
+    if (x > 832 && x < 890 && y < 92) {
+      this.speedPicker = !this.speedPicker;
+      C.Sfx.play('click');
+      return;
+    }
 
     // 3. 种子卡片
     if (y < 92) {
@@ -444,30 +489,105 @@
     this.renderEffects(ctx);
     for (let i = 0; i < this.suns.length; i++) this.suns[i].render(ctx, now);
     this.renderHUD(ctx);
+    this.renderSpeedPicker(ctx);
     this.renderBanner(ctx);
     this.renderPopup(ctx);
   };
 
-  GameScene.prototype.renderBoard = function (ctx) {
-    const bg = S.get('bg_lawn');
-    if (bg && bg.ready) {
-      ctx.drawImage(bg.canvas, 0, 0, 960, 540);
-    } else {
-      ctx.fillStyle = '#5aa845';
-      ctx.fillRect(0, 90, 960, 450);
-    }
+  /* ================= 背景（程序化绘制，离屏预渲染一次） ================= */
+  GameScene.prototype.buildBackground = function () {
+    const B = BOARD;
+    const c = P.createCanvas();
+    c.width = 960; c.height = 540;
+    const x = P.ctx2d(c);
 
-    // 格子明暗交替（棋盘感）
-    for (let r = 0; r < BOARD.rows; r++) {
-      for (let c = 0; c < BOARD.cols; c++) {
-        if ((r + c) % 2 === 0) {
-          ctx.fillStyle = 'rgba(255,255,255,0.06)';
-          ctx.fillRect(BOARD.x + c * BOARD.cellW, BOARD.y + r * BOARD.cellH, BOARD.cellW, BOARD.cellH);
+    // 草地底色（上亮下暗，有纵深）
+    const g = x.createLinearGradient(0, 92, 0, 540);
+    g.addColorStop(0, '#7dbf4a');
+    g.addColorStop(0.5, '#6cb23f');
+    g.addColorStop(1, '#5a9c34');
+    x.fillStyle = g;
+    x.fillRect(0, 0, 960, 540);
+
+    // 棋盘格子明暗交替（烘焙进背景）
+    for (let r = 0; r < B.rows; r++) {
+      for (let cc = 0; cc < B.cols; cc++) {
+        if ((r + cc) % 2 === 0) {
+          x.fillStyle = 'rgba(255,255,255,0.09)';
+        } else {
+          x.fillStyle = 'rgba(30,70,20,0.08)';
         }
+        x.fillRect(B.x + cc * B.cellW, B.y + r * B.cellH, B.cellW, B.cellH);
       }
     }
 
-    // 种植预览
+    // 固定种子伪随机（草丛位置稳定不闪）
+    let seed = 1234567;
+    function rnd() { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; }
+
+    // 草丛装饰（棋盘内稀疏、格间为主）
+    for (let i = 0; i < 130; i++) {
+      const gx = 10 + rnd() * 940;
+      const gy = 100 + rnd() * 430;
+      x.strokeStyle = 'rgba(40,90,30,' + (0.10 + rnd() * 0.12) + ')';
+      x.lineWidth = 1.6;
+      x.beginPath();
+      x.moveTo(gx, gy);
+      x.quadraticCurveTo(gx - 2 + rnd() * 4, gy - 5, gx - 3 + rnd() * 6, gy - 8 - rnd() * 3);
+      x.stroke();
+    }
+
+    // 小花点缀
+    for (let i = 0; i < 14; i++) {
+      const fx = 70 + rnd() * 850;
+      const fy = 110 + rnd() * 410;
+      x.fillStyle = ['#ffe082', '#fff59d', '#f48fb1', '#b39ddb'][Math.floor(rnd() * 4)];
+      x.beginPath(); x.arc(fx, fy, 2.2, 0, Math.PI * 2); x.fill();
+    }
+
+    // 顶部边界：棋盘上沿一条泥土路肩（衔接 HUD 与草坪）
+    x.fillStyle = '#8d6e43';
+    x.fillRect(0, 92, 960, 8);
+    x.fillStyle = 'rgba(0,0,0,0.18)';
+    x.fillRect(0, 98, 960, 2);
+
+    // 左侧暗角（房子方向的阴影纵深）
+    const lg = x.createLinearGradient(0, 0, 70, 0);
+    lg.addColorStop(0, 'rgba(20,40,15,0.4)');
+    lg.addColorStop(1, 'rgba(20,40,15,0)');
+    x.fillStyle = lg;
+    x.fillRect(0, 92, 70, 448);
+
+    // 右侧人行道（僵尸来向）
+    x.fillStyle = '#b0a79b';
+    x.fillRect(952, 92, 8, 448);
+    x.fillStyle = 'rgba(0,0,0,0.15)';
+    for (let yy = 100; yy < 540; yy += 54) x.fillRect(952, yy, 8, 2);
+    const rg = x.createLinearGradient(930, 0, 960, 0);
+    rg.addColorStop(0, 'rgba(0,0,0,0)');
+    rg.addColorStop(1, 'rgba(60,50,40,0.22)');
+    x.fillStyle = rg;
+    x.fillRect(930, 92, 30, 448);
+
+    // 底部暗角
+    const bg2 = x.createLinearGradient(0, 500, 0, 540);
+    bg2.addColorStop(0, 'rgba(0,0,0,0)');
+    bg2.addColorStop(1, 'rgba(20,40,15,0.3)');
+    x.fillStyle = bg2;
+    x.fillRect(0, 500, 960, 40);
+
+    this.bgCanvas = c;
+  };
+
+  GameScene.prototype.renderBoard = function (ctx) {
+    if (this.bgCanvas) {
+      ctx.drawImage(this.bgCanvas, 0, 0);
+    } else {
+      ctx.fillStyle = '#6cb23f';
+      ctx.fillRect(0, 0, 960, 540);
+    }
+
+    // 种植预览（运行时叠加）
     const hover = (this.selected >= 0 || this.shovelMode) ? this.previewCell : null;
     if (hover) {
       ctx.fillStyle = this.previewOk ? 'rgba(255,255,255,0.25)' : 'rgba(255,80,80,0.2)';
@@ -500,18 +620,34 @@
     }
   };
 
-  GameScene.prototype.renderHUD = function (ctx) {
-    // 顶部栏底
-    ctx.fillStyle = 'rgba(46,32,22,0.95)';
-    ctx.fillRect(0, 0, 960, 92);
-    ctx.fillStyle = 'rgba(255,255,255,0.08)';
-    ctx.fillRect(0, 88, 960, 4);
+  // 速度选择浮层几何
+  GameScene.prototype.speedPickerRect = function () {
+    const w = SPEED_OPTIONS.length * 48 + 12;
+    return { x: 948 - w, y: 100, w: w, h: 54 };
+  };
 
-    // 阳光计数
-    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  GameScene.prototype.renderHUD = function (ctx) {
+    // 顶部栏：木质渐变 + 高光
+    const barGrad = ctx.createLinearGradient(0, 0, 0, 92);
+    barGrad.addColorStop(0, '#6b5138');
+    barGrad.addColorStop(0.85, '#4a3728');
+    barGrad.addColorStop(1, '#3a2b1f');
+    ctx.fillStyle = barGrad;
+    ctx.fillRect(0, 0, 960, 92);
+    ctx.fillStyle = 'rgba(255,235,200,0.14)';
+    ctx.fillRect(0, 0, 960, 3);
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fillRect(0, 89, 960, 3);
+
+    // 阳光计数（白卡+描边）
+    ctx.fillStyle = 'rgba(255,252,240,0.95)';
     ctx.beginPath();
-    ctx.roundRect ? ctx.roundRect(8, 8, 80, 76, 10) : ctx.rect(8, 8, 80, 76);
+    ctx.roundRect ? ctx.roundRect(8, 8, 80, 76, 12) : ctx.rect(8, 8, 80, 76);
     ctx.fill();
+    ctx.strokeStyle = '#c9a06a'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(8, 8, 80, 76, 12) : ctx.rect(8, 8, 80, 76);
+    ctx.stroke();
     const grad = ctx.createRadialGradient(42, 34, 4, 42, 34, 18);
     grad.addColorStop(0, '#fff59d'); grad.addColorStop(1, '#ffb300');
     ctx.fillStyle = grad;
@@ -524,7 +660,7 @@
       ctx.lineTo(42 + Math.cos(a) * 25, 34 + Math.sin(a) * 25);
       ctx.stroke();
     }
-    ctx.fillStyle = '#fff';
+    ctx.fillStyle = '#4e342e';
     ctx.font = 'bold 24px sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(String(this.sun), 46, 76);
@@ -536,52 +672,122 @@
 
     // 铲子
     const shovelX = 96 + this.cards.length * 69 + 8;
-    ctx.fillStyle = this.shovelMode ? 'rgba(255,193,7,0.35)' : 'rgba(255,255,255,0.12)';
+    ctx.fillStyle = this.shovelMode ? 'rgba(255,193,7,0.45)' : 'rgba(255,252,240,0.85)';
     ctx.beginPath();
-    ctx.roundRect ? ctx.roundRect(shovelX, 8, 58, 76, 10) : ctx.rect(shovelX, 8, 58, 76);
+    ctx.roundRect ? ctx.roundRect(shovelX, 8, 58, 76, 12) : ctx.rect(shovelX, 8, 58, 76);
     ctx.fill();
-    if (this.shovelMode) {
-      ctx.strokeStyle = '#ffc107'; ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.roundRect ? ctx.roundRect(shovelX, 8, 58, 76, 10) : ctx.rect(shovelX, 8, 58, 76);
-      ctx.stroke();
-    }
+    ctx.strokeStyle = this.shovelMode ? '#ffc107' : '#c9a06a'; ctx.lineWidth = this.shovelMode ? 3 : 2;
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(shovelX, 8, 58, 76, 12) : ctx.rect(shovelX, 8, 58, 76);
+    ctx.stroke();
     this.drawShovel(ctx, shovelX + 29, 46);
 
-    // 波次进度（旗帜条）
-    const px = 640, pw = 230, py = 36;
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    // 波次进度（旗帜条）590-820
+    const px = 590, pw = 230, py = 34;
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(px - 4, py - 4, pw + 8, 24, 12) : ctx.rect(px - 4, py - 4, pw + 8, 24);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.1)';
     ctx.beginPath();
     ctx.roundRect ? ctx.roundRect(px, py, pw, 16, 8) : ctx.rect(px, py, pw, 16);
     ctx.fill();
     const progress = Math.min(1, (this.waveIdx + (this.waveQueue.length ? 0.4 : 0)) / this.totalWaves);
     const pg = ctx.createLinearGradient(px, 0, px + pw, 0);
-    pg.addColorStop(0, '#66bb6a'); pg.addColorStop(1, '#43a047');
+    pg.addColorStop(0, '#8bc34a'); pg.addColorStop(1, '#2e7d32');
     ctx.fillStyle = pg;
     ctx.beginPath();
     ctx.roundRect ? ctx.roundRect(px + 2, py + 2, Math.max(0, (pw - 4) * progress), 12, 6) : ctx.rect(px + 2, py + 2, Math.max(0, (pw - 4) * progress), 12);
     ctx.fill();
     // 旗帜标记
     const flagX = px + pw * (this.totalWaves - 0.5) / this.totalWaves;
+    ctx.strokeStyle = '#8d6e63'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(flagX, py - 14); ctx.lineTo(flagX, py + 14); ctx.stroke();
     ctx.fillStyle = '#e53935';
     ctx.beginPath();
-    ctx.moveTo(flagX, py - 12); ctx.lineTo(flagX + 14, py - 6); ctx.lineTo(flagX, py);
+    ctx.moveTo(flagX, py - 14); ctx.lineTo(flagX + 15, py - 8); ctx.lineTo(flagX, py - 2);
     ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = '#8d6e63'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(flagX, py - 12); ctx.lineTo(flagX, py + 14); ctx.stroke();
-    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
     ctx.font = '12px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('关卡进度 ' + Math.min(this.waveIdx, this.totalWaves) + '/' + this.totalWaves, px + pw / 2, py + 32);
+    ctx.fillText('关卡进度 ' + Math.min(this.waveIdx, this.totalWaves) + '/' + this.totalWaves, px + pw / 2, py + 34);
 
-    // 暂停按钮
-    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    // 速度按钮（832-890）
+    const spActive = this.speed > 1;
+    const spGrad = ctx.createLinearGradient(0, 20, 0, 64);
+    spGrad.addColorStop(0, spActive ? '#ffb74d' : 'rgba(255,252,240,0.9)');
+    spGrad.addColorStop(1, spActive ? '#f57c00' : 'rgba(230,220,200,0.85)');
+    ctx.fillStyle = spGrad;
     ctx.beginPath();
-    ctx.roundRect ? ctx.roundRect(912, 8, 44, 36, 8) : ctx.rect(912, 8, 44, 36);
+    ctx.roundRect ? ctx.roundRect(832, 20, 58, 44, 10) : ctx.rect(832, 20, 58, 44);
     ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(924, 16, 6, 20);
-    ctx.fillRect(938, 16, 6, 20);
+    ctx.strokeStyle = spActive ? '#e65100' : '#c9a06a'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(832, 20, 58, 44, 10) : ctx.rect(832, 20, 58, 44);
+    ctx.stroke();
+    // 双箭头图标 + 倍率
+    ctx.fillStyle = spActive ? '#fff' : '#6d4c41';
+    ctx.beginPath();
+    ctx.moveTo(843, 32); ctx.lineTo(851, 37); ctx.lineTo(843, 42); ctx.closePath(); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(851, 32); ctx.lineTo(859, 37); ctx.lineTo(851, 42); ctx.closePath(); ctx.fill();
+    ctx.font = 'bold 17px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(this.speed.toFixed(1) + 'x', 875, 43);
+    ctx.font = '10px sans-serif';
+    ctx.fillText('速度', 861, 58);
+
+    // 暂停按钮（900-952）
+    ctx.fillStyle = 'rgba(255,252,240,0.85)';
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(900, 20, 52, 44, 10) : ctx.rect(900, 20, 52, 44);
+    ctx.fill();
+    ctx.strokeStyle = '#c9a06a'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(900, 20, 52, 44, 10) : ctx.rect(900, 20, 52, 44);
+    ctx.stroke();
+    ctx.fillStyle = '#6d4c41';
+    ctx.fillRect(917, 32, 7, 20);
+    ctx.fillRect(929, 32, 7, 20);
+  };
+
+  // 速度选择浮层
+  GameScene.prototype.renderSpeedPicker = function (ctx) {
+    if (!this.speedPicker) return;
+    const p = this.speedPickerRect();
+    ctx.save();
+    // 面板
+    ctx.fillStyle = 'rgba(62,46,32,0.96)';
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(p.x, p.y, p.w, p.h, 12) : ctx.rect(p.x, p.y, p.w, p.h);
+    ctx.fill();
+    ctx.strokeStyle = '#c9a06a'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(p.x, p.y, p.w, p.h, 12) : ctx.rect(p.x, p.y, p.w, p.h);
+    ctx.stroke();
+    // 档位按钮
+    for (let i = 0; i < SPEED_OPTIONS.length; i++) {
+      const bx = p.x + 6 + i * 48, by = p.y + 8, bw = 44, bh = 38;
+      const cur = Math.abs(SPEED_OPTIONS[i] - this.speed) < 0.01;
+      const bg2 = ctx.createLinearGradient(0, by, 0, by + bh);
+      bg2.addColorStop(0, cur ? '#ffb74d' : 'rgba(255,255,255,0.16)');
+      bg2.addColorStop(1, cur ? '#ef6c00' : 'rgba(255,255,255,0.06)');
+      ctx.fillStyle = bg2;
+      ctx.beginPath();
+      ctx.roundRect ? ctx.roundRect(bx, by, bw, bh, 8) : ctx.rect(bx, by, bw, bh);
+      ctx.fill();
+      if (cur) {
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.roundRect ? ctx.roundRect(bx, by, bw, bh, 8) : ctx.rect(bx, by, bw, bh);
+        ctx.stroke();
+      }
+      ctx.fillStyle = cur ? '#fff' : 'rgba(255,255,255,0.85)';
+      ctx.font = 'bold 15px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(SPEED_OPTIONS[i].toFixed(1), bx + bw / 2, by + 25);
+    }
+    ctx.restore();
   };
 
   GameScene.prototype.renderCard = function (ctx, i) {
@@ -592,23 +798,30 @@
     const affordable = this.sun >= def.cost && card.cooldown <= 0;
 
     ctx.save();
-    // 卡片底
-    ctx.fillStyle = selected ? 'rgba(255,213,79,0.45)' : 'rgba(255,255,255,0.12)';
+    // 卡片底：米色渐变卡面
+    const cardGrad = ctx.createLinearGradient(0, y, 0, y + h);
+    cardGrad.addColorStop(0, selected ? '#ffe082' : 'rgba(255,252,240,0.95)');
+    cardGrad.addColorStop(1, selected ? '#ffb300' : 'rgba(235,225,205,0.92)');
+    ctx.fillStyle = cardGrad;
     ctx.beginPath();
-    ctx.roundRect ? ctx.roundRect(x, y, w, h, 10) : ctx.rect(x, y, w, h);
+    ctx.roundRect ? ctx.roundRect(x, y, w, h, 12) : ctx.rect(x, y, w, h);
     ctx.fill();
-    if (selected) {
-      ctx.strokeStyle = '#ffc107'; ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.roundRect ? ctx.roundRect(x, y, w, h, 10) : ctx.rect(x, y, w, h);
-      ctx.stroke();
-    }
+    ctx.strokeStyle = selected ? '#ff6f00' : '#c9a06a';
+    ctx.lineWidth = selected ? 3 : 2;
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(x, y, w, h, 12) : ctx.rect(x, y, w, h);
+    ctx.stroke();
+    // 顶部高光
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(x + 4, y + 3, w - 8, 10, 5) : ctx.rect(x + 4, y + 3, w - 8, 10);
+    ctx.fill();
 
     // 植物图
     S.draw(ctx, def.sprite, x + w / 2, y + 34, 46, 46);
 
     // 成本
-    ctx.fillStyle = affordable ? '#ffe082' : '#ef9a9a';
+    ctx.fillStyle = affordable ? '#4e342e' : '#c62828';
     ctx.font = 'bold 15px sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(String(def.cost), x + w / 2, y + h - 6);
@@ -616,18 +829,14 @@
     // 冷却遮罩
     if (card.cooldown > 0) {
       const ratio = card.cooldown / def.cooldown;
-      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillStyle = 'rgba(30,20,10,0.6)';
       ctx.beginPath();
-      ctx.roundRect ? ctx.roundRect(x, y, w, h, 10) : ctx.rect(x, y, w, h);
-      ctx.fill();
-      ctx.fillStyle = 'rgba(255,255,255,0.25)';
-      ctx.beginPath();
-      ctx.roundRect ? ctx.roundRect(x, y + h * (1 - ratio), w, h * ratio, 10) : ctx.rect(x, y + h * (1 - ratio), w, h * ratio);
+      ctx.roundRect ? ctx.roundRect(x, y, w, h * (1 - ratio), 12) : ctx.rect(x, y, w, h * (1 - ratio));
       ctx.fill();
     } else if (!affordable) {
       ctx.fillStyle = 'rgba(0,0,0,0.4)';
       ctx.beginPath();
-      ctx.roundRect ? ctx.roundRect(x, y, w, h, 10) : ctx.rect(x, y, w, h);
+      ctx.roundRect ? ctx.roundRect(x, y, w, h, 12) : ctx.rect(x, y, w, h);
       ctx.fill();
     }
     ctx.restore();
@@ -729,18 +938,7 @@
     const btns = this.popupButtons();
     for (let i = 0; i < btns.length; i++) {
       const b = btns[i];
-      ctx.fillStyle = '#8bc34a';
-      ctx.beginPath();
-      ctx.roundRect ? ctx.roundRect(b.x, b.y, b.w, b.h, 12) : ctx.rect(b.x, b.y, b.w, b.h);
-      ctx.fill();
-      ctx.strokeStyle = '#33691e';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.roundRect ? ctx.roundRect(b.x, b.y, b.w, b.h, 12) : ctx.rect(b.x, b.y, b.w, b.h);
-      ctx.stroke();
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 26px sans-serif';
-      ctx.fillText(b.text, b.x + b.w / 2, b.y + 40);
+      PVZ.drawButton(ctx, b, i === 0 ? 'green' : 'brown');
     }
     ctx.restore();
   };
