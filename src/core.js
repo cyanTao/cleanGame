@@ -17,6 +17,11 @@
     canvas.height = Math.floor(info.height * dpr);
     view.screenW = info.width;
     view.screenH = info.height;
+    // 关键：CSS 显示尺寸必须等于视口尺寸，否则画布会按属性尺寸(dpr放大)显示导致错位
+    if (canvas.style) {
+      canvas.style.width = info.width + 'px';
+      canvas.style.height = info.height + 'px';
+    }
     updateViewScale();
     return canvas;
   }
@@ -203,11 +208,13 @@
       this.ctx = P.ctx2d(this.canvas);
       this.ctx.imageSmoothingEnabled = true;
 
-      // 尺寸变化监听（H5 旋转/缩放）
+      // 尺寸变化监听（H5 旋转/缩放/移动端地址栏收起展开）
       if (!P.isWx) {
-        window.addEventListener('resize', function () {
-          setupCanvas();
-        });
+        window.addEventListener('resize', function () { setupCanvas(); });
+        window.addEventListener('orientationchange', function () { setTimeout(setupCanvas, 150); });
+        if (window.visualViewport) {
+          window.visualViewport.addEventListener('resize', function () { setupCanvas(); });
+        }
       }
 
       P.onFrame(this._frame.bind(this));
