@@ -1,4 +1,4 @@
-// ===== 标题场景：模式选择 =====
+// ===== 标题场景：模式选择（键盘 / 点击） =====
 import Phaser from 'phaser';
 import { SCENE, MECHAS, VIEW } from '../config.js';
 import { SPRITE_SCALE } from '../data/sprites.js';
@@ -31,19 +31,22 @@ export class TitleScene extends Phaser.Scene {
     // 地面
     this.drawGround();
 
-    // 菜单
-    this.add.text(VIEW.width / 2, 268, '[1] 人机对战', {
-      fontFamily: 'Courier New, monospace', fontSize: '28px', fontStyle: 'bold',
-      color: '#ffffff', backgroundColor: '#161c40', padding: { x: 18, y: 8 }
-    }).setOrigin(0.5).setDepth(20);
-    this.add.text(VIEW.width / 2, 324, '[2] 双人对战', {
-      fontFamily: 'Courier New, monospace', fontSize: '28px', fontStyle: 'bold',
-      color: '#ffffff', backgroundColor: '#161c40', padding: { x: 18, y: 8 }
-    }).setOrigin(0.5).setDepth(20);
+    // 菜单（键盘数字 / 点击均可）
+    const mkMenu = (y, label, mode) => {
+      const t = this.add.text(VIEW.width / 2, y, label, {
+        fontFamily: 'Courier New, monospace', fontSize: '28px', fontStyle: 'bold',
+        color: '#ffffff', backgroundColor: '#161c40', padding: { x: 18, y: 8 }
+      }).setOrigin(0.5).setDepth(20).setInteractive({ useHandCursor: true });
+      t.on('pointerover', () => t.setColor('#ffd75e'));
+      t.on('pointerout', () => t.setColor('#ffffff'));
+      t.on('pointerdown', () => this.scene.start(SCENE.BATTLE, { mode }));
+    };
+    mkMenu(268, '[1] 人机对战', 'pve');
+    mkMenu(324, '[2] 双人对战', 'pvp');
 
-    // 操作说明
+    // 操作说明（触屏 / 键盘通用）
     const help = [
-      `P1 ${MECHAS.blu.name}：A/D 移动  W 跳  J 攻击  K 防御  L 必杀`,
+      `P1 ${MECHAS.blu.name}：A/D 移动  W 跳  J 攻击  K 防御  L 必杀（或点击屏幕按钮）`,
       `P2 ${MECHAS.red.name}：←/→ 移动  ↑ 跳  1 攻击  2 防御  3 必杀`,
       '能量满 100 可释放必杀 · 防御减伤 75% · 60 秒倒计时 HP 高者胜'
     ];

@@ -93,7 +93,7 @@ export class Mecha extends Phaser.Physics.Arcade.Sprite {
         if (this.stateTime >= COMBAT.hitstun) this.enter('idle');
         break;
       default:
-        this.updateFree(input);
+        this.updateFree(dt, input);
         break;
     }
     this.clampEnergy();
@@ -115,7 +115,7 @@ export class Mecha extends Phaser.Physics.Arcade.Sprite {
   }
 
   /** 自由态：移动 / 跳 / 攻击 / 防御 */
-  updateFree(input) {
+  updateFree(dt, input) {
     if (!input) { this.setVelocityX(0); this.enterIdleIfWalk(); return; }
 
     // 落地回到待机

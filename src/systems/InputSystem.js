@@ -1,9 +1,11 @@
-// ===== 双人键位 → 统一输入接口 =====
+// ===== 键盘 + 触屏/鼠标 → 统一输入接口 =====
 import { KEYS } from '../config.js';
+import { TouchControls } from './TouchControls.js';
 
 /**
  * 统一输入接口：getState() → { left, right, jump, attack, defend, special }
  * jump/attack/special 为边沿触发（本帧刚按下）
+ * 虚拟按键始终显示：触屏用手指、桌面用鼠标均可点击（控制 P1）
  */
 export class InputSystem {
   constructor(scene) {
@@ -13,6 +15,7 @@ export class InputSystem {
       p2: k.addKeys(KEYS.p2)
     };
     this.prev = { p1: {}, p2: {} };
+    this.touch = new TouchControls(scene);
   }
 
   /** @param {'p1'|'p2'} player */
@@ -26,7 +29,7 @@ export class InputSystem {
       prev[name] = now;
       return now && !was;
     };
-    return {
+    const s = {
       left: down(m.left),
       right: down(m.right),
       jump: justDown(m.jump, 'jump'),
@@ -34,5 +37,17 @@ export class InputSystem {
       defend: down(m.defend),
       special: justDown(m.special, 'special')
     };
+
+    // 合并触屏虚拟按键（仅 P1）
+    const t = this.touch;
+    if (player === 'p1' && t) {
+      s.left = s.left || t.held.left;
+      s.right = s.right || t.held.right;
+      s.defend = s.defend || t.held.defend;
+      s.jump = s.jump || t.consume('jump');
+      s.attack = s.attack || t.consume('attack');
+      s.special = s.special || t.consume('special');
+    }
+    return s;
   }
 }

@@ -41,11 +41,12 @@ export class GameOverScene extends Phaser.Scene {
       color: '#ffffff', stroke: '#10141f', strokeThickness: 8
     }).setOrigin(0.5).setDepth(20);
 
-    const restart = this.add.text(VIEW.width / 2, 505, '按 R 返回标题', {
+    const restart = this.add.text(VIEW.width / 2, 505, '按 R 或点击返回标题', {
       fontFamily: 'Courier New, monospace', fontSize: '22px', fontStyle: 'bold',
       color: '#8fb0f0', stroke: '#10141f', strokeThickness: 4
-    }).setOrigin(0.5).setDepth(20);
+    }).setOrigin(0.5).setDepth(20).setInteractive({ useHandCursor: true });
     this.tweens.add({ targets: restart, alpha: 0.3, duration: 600, yoyo: true, repeat: -1 });
+    restart.on('pointerdown', () => this.scene.start(SCENE.TITLE));
 
     this.keyR = this.input.keyboard.addKey('R');
   }

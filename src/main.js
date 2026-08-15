@@ -6,7 +6,7 @@ import { TitleScene } from './scenes/TitleScene.js';
 import { BattleScene } from './scenes/BattleScene.js';
 import { GameOverScene } from './scenes/GameOverScene.js';
 
-new Phaser.Game({
+const game = new Phaser.Game({
   type: Phaser.AUTO,
   parent: 'game',
   width: VIEW.width,
@@ -26,3 +26,5 @@ new Phaser.Game({
   },
   scene: [BootScene, TitleScene, BattleScene, GameOverScene]
 });
+
+window.game = game; // 调试/自动化测试入口
