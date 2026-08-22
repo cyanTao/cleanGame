@@ -1,0 +1,6 @@
+{
+  "appid": "touristappid",
+  "projectname": "clay-monster-game",
+  "compileType": "game",
+  "setting": { "es6": true, "minified": true }
+}

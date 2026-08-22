@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.superpowers/
+wechat/game.js
+douyin/game.js
+*.log
