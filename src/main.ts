@@ -26,14 +26,34 @@ export async function startGame(platform: Platform): Promise<void> {
   // UI 覆盖层画布（pointer-events 关闭，输入统一走主画布）
   const uiCanvas = document.createElement('canvas')
   uiCanvas.style.position = 'absolute'
-  uiCanvas.style.inset = '0'
+  // 替换元素在 inset:0 下不拉伸（用固有尺寸），必须显式百分比尺寸才能铺满容器
+  uiCanvas.style.width = '100%'
+  uiCanvas.style.height = '100%'
   uiCanvas.style.pointerEvents = 'none'
   if (holder) holder.appendChild(uiCanvas)
-  const s = platform.size()
-  uiCanvas.width = s.width * s.dpr
-  uiCanvas.height = s.height * s.dpr
-  uiCanvas.getContext('2d')!.scale(s.dpr, s.dpr)
-  const uiCtx: UiContext = { ctx: uiCanvas.getContext('2d')!, width: s.width, height: s.height, safeArea: platform.safeArea() }
+  const ui2d = uiCanvas.getContext('2d')!
+  const uiCtx: UiContext = { ctx: ui2d, width: 0, height: 0, safeArea: { top: 0, bottom: 0 } }
+
+  // 屏幕尺寸变化（地址栏收放/旋转）时重适配：相机 + UI 层 + 按钮位置
+  const bestiaryBtn = { x: 0, y: 0, w: 72, h: 48 }
+  const layoutUi = () => {
+    const s = platform.size()
+    uiCanvas.width = s.width * s.dpr
+    uiCanvas.height = s.height * s.dpr
+    ui2d.setTransform(1, 0, 0, 1, 0, 0)
+    ui2d.scale(s.dpr, s.dpr)
+    uiCtx.width = s.width
+    uiCtx.height = s.height
+    uiCtx.safeArea = platform.safeArea()
+    // 图鉴按钮避开底部安全区（Home 指示条）
+    bestiaryBtn.x = s.width - 88
+    bestiaryBtn.y = s.height - 68 - uiCtx.safeArea.bottom
+  }
+  layoutUi()
+  platform.onResize?.(() => {
+    scene.resize()
+    layoutUi()
+  })
 
   const game = createGame({
     storage: platform.storage,
@@ -92,26 +112,32 @@ export async function startGame(platform: Platform): Promise<void> {
     }
   })
 
-  // 输入分流：图鉴按钮 / 重开按钮 / 拖拽投放
-  const bestiaryBtn = { x: s.width - 88, y: s.height - 68, w: 72, h: 48 }
-  const handleDown = (x: number, y: number) => {
+  // 输入分流：图鉴按钮 / 重开按钮 / 拖拽投放（按钮用屏幕坐标命中，投放转世界坐标）
+  const handleDown = (sx: number, sy: number) => {
     const snap = game.snapshot()
     if (showBestiary) { showBestiary = false; return }
     if (snap.state === 'over') {
-      if (lastRestartRect && hitRect({ x, y }, lastRestartRect)) {
+      if (lastRestartRect && hitRect({ x: sx, y: sy }, lastRestartRect)) {
         clearAll()
         game.restart()
         lastRestartRect = null
       }
       return
     }
-    if (hitRect({ x, y }, bestiaryBtn)) { showBestiary = true; return }
-    game.pointerDown(x, y)
+    if (hitRect({ x: sx, y: sy }, bestiaryBtn)) { showBestiary = true; return }
+    const w = scene.screenToWorld(sx, sy)
+    game.pointerDown(w.x, w.y)
   }
   platform.onInput((e) => {
     if (e.type === 'down') handleDown(e.pointer.x, e.pointer.y)
-    if (e.type === 'move' && game.snapshot().state === 'dragging') game.pointerMove(e.pointer.x, e.pointer.y)
-    if (e.type === 'up' && game.snapshot().state === 'dragging') game.pointerUp(e.pointer.x)
+    if (e.type === 'move' && game.snapshot().state === 'dragging') {
+      const w = scene.screenToWorld(e.pointer.x, e.pointer.y)
+      game.pointerMove(w.x, w.y)
+    }
+    if (e.type === 'up' && game.snapshot().state === 'dragging') {
+      const w = scene.screenToWorld(e.pointer.x, e.pointer.y)
+      game.pointerUp(w.x)
+    }
   })
 
   // 主循环：物理+渲染+特效，UI 层绘制
@@ -126,7 +152,11 @@ export async function startGame(platform: Platform): Promise<void> {
     } else if (showBestiary) {
       drawBestiary(uiCtx, snap.bestiary, levelColor)
     } else {
-      drawHud(uiCtx, snap)
+      // 拖拽预览的 dragX 是世界坐标，绘制前转屏幕坐标
+      const uiSnap = snap.state === 'dragging' && snap.dragX !== null
+        ? { ...snap, dragX: scene.worldToScreenX(snap.dragX) }
+        : snap
+      drawHud(uiCtx, uiSnap)
     }
     requestAnimationFrame(loop)
   }

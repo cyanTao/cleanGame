@@ -32,6 +32,8 @@ export interface Platform {
   safeArea(): SafeArea
   /** 订阅输入事件流，返回取消订阅函数 */
   onInput(cb: (e: InputEvent) => void): () => void
+  /** 订阅屏幕尺寸变化（地址栏收放/旋转），返回取消订阅函数；平台可缺省 */
+  onResize?(cb: () => void): () => void
   loadAsset(url: string): Promise<ArrayBuffer>
   storage: Storage
 }
