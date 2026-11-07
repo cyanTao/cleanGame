@@ -1,7 +1,7 @@
 // ===== 战斗场景：刷怪 / Boss / 道具 / 计分 / HUD =====
 import Phaser from 'phaser';
 import {
-  SCENE, VIEW, PLAYER, ENEMY, DIFFICULTY, POWERUP, FONT, COLORS
+  SCENE, VIEW, PLAYER, ENEMY, DIFFICULTY, INSANE, POWERUP, FONT, COLORS
 } from '../config.js';
 import { Player } from '../entities/Player.js';
 import { Enemy } from '../entities/Enemy.js';
@@ -12,7 +12,8 @@ import { sfx } from '../systems/SoundFX.js';
 import { createButton } from '../systems/ui.js';
 import {
   weaponSpread, fireIntervalFor, difficultyAt, bossHpFor, spawnWeights,
-  pickWeighted, pickPowerup, formatScore, formatTime, loadBest, saveBest
+  pickWeighted, pickPowerup, formatScore, formatTime, loadBest, saveBest,
+  loadLives, loadMode
 } from '../systems/gameLogic.js';
 
 export class BattleScene extends Phaser.Scene {
@@ -26,12 +27,17 @@ export class BattleScene extends Phaser.Scene {
     this.elapsed = 0;
     this.score = 0;
     this.kills = 0;
-    this.lives = PLAYER.startLives;
+    this.mode = loadMode();
+    this.insane = this.mode === 'insane';
+    this.diffConfig = this.insane ? INSANE : DIFFICULTY;
+    this.fireIntervalMul = this.insane ? INSANE.fireIntervalMul : 1;
+    this.bossAttackMs = this.insane ? INSANE.bossAttackMs : 820;
+    this.lives = loadLives();
     this.bombs = PLAYER.startBombs;
     this.weaponLevel = PLAYER.startWeapon;
     this.spawnAcc = 0;
     this.fireAcc = 0;
-    this.nextBossAt = DIFFICULTY.bossEvery * 1000;
+    this.nextBossAt = this.diffConfig.bossEvery * 1000;
     this.bossIndex = 0;
     this.boss = null;
     this.bossPattern = 0;
@@ -61,7 +67,7 @@ export class BattleScene extends Phaser.Scene {
     this.createInput();
     this.showHint();
 
-    this.showBanner(`WAVE 01`, '#63f2ff', '准备迎敌');
+    this.showBanner('WAVE 01', '#63f2ff', this.insane ? '变态模式 · 准备迎敌' : '准备迎敌');
     this.cameras.main.fadeIn(300, 0, 0, 0);
   }
 
@@ -84,7 +90,7 @@ export class BattleScene extends Phaser.Scene {
       classType: Bullet, maxSize: 320, runChildUpdate: true
     });
     this.enemies = this.physics.add.group({
-      classType: Enemy, maxSize: DIFFICULTY.maxEnemies, runChildUpdate: true
+      classType: Enemy, maxSize: this.diffConfig.maxEnemies, runChildUpdate: true
     });
     this.powerups = this.physics.add.group({
       classType: Powerup, maxSize: 12, runChildUpdate: true
@@ -143,6 +149,11 @@ export class BattleScene extends Phaser.Scene {
       fontFamily: FONT, fontSize: '11px', color: '#7f8db4'
     }).setDepth(104);
     this.weaponPips = this.add.graphics().setDepth(104);
+
+    // 激光剩余时间提示
+    this.laserText = this.add.text(20, VIEW.height - 90, '', {
+      fontFamily: FONT, fontSize: '13px', fontStyle: 'bold', color: '#c084ff'
+    }).setDepth(104);
 
     // Boss 血条
     this.bossBar = this.add.graphics().setDepth(102).setVisible(false);
@@ -208,8 +219,20 @@ export class BattleScene extends Phaser.Scene {
     if (second === this.lastSecond) return;
     this.lastSecond = second;
     this.timeText.setText(formatTime(this.elapsed));
-    const wave = difficultyAt(this.elapsed / 1000).wave;
-    this.waveText.setText(`WAVE ${String(wave).padStart(2, '0')}`);
+    const wave = difficultyAt(this.elapsed / 1000, this.insane).wave;
+    const label = `WAVE ${String(wave).padStart(2, '0')}`;
+    this.waveText.setText(this.insane ? `${label} · 变态` : label);
+  }
+
+  updateLaserHud(time) {
+    if (!this.laserText) return;
+    if (this.player.alive && time < this.player.laserUntil) {
+      const remain = ((this.player.laserUntil - time) / 1000).toFixed(1);
+      const text = `激光 ${remain}s`;
+      if (this.laserText.text !== text) this.laserText.setText(text);
+    } else if (this.laserText.text !== '') {
+      this.laserText.setText('');
+    }
   }
 
   updateBossBar() {
@@ -316,21 +339,35 @@ export class BattleScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(201);
 
     const resume = createButton(this, {
-      x: VIEW.width / 2, y: 492, w: 240, h: 58, label: '继 续', depth: 201,
+      x: VIEW.width / 2, y: 476, w: 240, h: 56, label: '继 续 游 戏', depth: 201,
       onClick: () => this.togglePause()
     });
+    const restart = createButton(this, {
+      x: VIEW.width / 2, y: 550, w: 240, h: 56, label: '重 新 开 始',
+      color: COLORS.cyan, depth: 201, fontSize: 22,
+      onClick: () => this.restartGame()
+    });
     const quit = createButton(this, {
-      x: VIEW.width / 2, y: 568, w: 240, h: 58, label: '返回标题',
+      x: VIEW.width / 2, y: 624, w: 240, h: 56, label: '返 回 标 题',
       color: COLORS.gold, depth: 201, fontSize: 22,
       onClick: () => this.returnToTitle()
     });
 
-    this.pauseUI = [shade, title, sub, resume, quit];
+    this.pauseUI = [shade, title, sub, resume, restart, quit];
   }
 
   hidePauseUI() {
     this.pauseUI.forEach((obj) => obj.destroy());
     this.pauseUI = [];
+  }
+
+  restartGame() {
+    this.physics.resume();
+    this.time.paused = false;
+    this.tweens.resumeAll();
+    this.anims.resumeAll();
+    sfx.play('start');
+    this.scene.start(SCENE.BATTLE);
   }
 
   returnToTitle() {
@@ -358,7 +395,7 @@ export class BattleScene extends Phaser.Scene {
     this.player.updateMovement(time, this.inputSystem);
     if (this.inputSystem.justBomb()) this.dropBomb();
 
-    const diff = difficultyAt(this.elapsed / 1000);
+    const diff = difficultyAt(this.elapsed / 1000, this.insane);
     this.speedMul = diff.speedMul;
 
     if (this.player.alive) {
@@ -381,12 +418,17 @@ export class BattleScene extends Phaser.Scene {
     }
 
     this.updateWaveHud();
+    this.updateLaserHud(time);
     this.updateBossBar();
   }
 
   // ---------- 玩家射击 / 炸弹 ----------
 
   shoot() {
+    if (this.player.hasLaser(this.time.now)) {
+      this.shootLaser();
+      return;
+    }
     const spread = weaponSpread(this.weaponLevel);
     for (const shot of spread) {
       const x = this.player.x + shot.dx;
@@ -402,6 +444,20 @@ export class BattleScene extends Phaser.Scene {
       );
     }
     sfx.play('shoot');
+  }
+
+  /** 激光弹：贯穿光束，弹道数随火力等级提升 */
+  shootLaser() {
+    const count = this.weaponLevel >= 5 ? 3 : this.weaponLevel >= 3 ? 2 : 1;
+    const spacing = 30;
+    const startX = this.player.x - ((count - 1) * spacing) / 2;
+    const y = this.player.y - 130;
+    for (let i = 0; i < count; i++) {
+      const beam = this.playerBullets.get(startX + i * spacing, y);
+      if (!beam) continue;
+      beam.fire(startX + i * spacing, y, 0, -1250, 'laser_beam', 1, true);
+    }
+    sfx.play('laser');
   }
 
   dropBomb() {
@@ -432,7 +488,7 @@ export class BattleScene extends Phaser.Scene {
   // ---------- 敌机 ----------
 
   spawnFormation(diff) {
-    if (this.enemies.countActive(true) >= DIFFICULTY.maxEnemies - 3) return;
+    if (this.enemies.countActive(true) >= this.diffConfig.maxEnemies - 3) return;
 
     const roll = Math.random();
     const wave = diff.wave;
@@ -466,7 +522,7 @@ export class BattleScene extends Phaser.Scene {
   spawnBoss() {
     const boss = this.enemies.get(VIEW.width / 2, -140);
     if (!boss) return;
-    boss.spawn('boss', VIEW.width / 2, -140, { hp: bossHpFor(this.bossIndex) });
+    boss.spawn('boss', VIEW.width / 2, -140, { hp: bossHpFor(this.bossIndex, this.insane) });
     this.boss = boss;
     this.bossIndex++;
     this.showBanner('WARNING', '#ff5a5a', 'BOSS INCOMING');
@@ -536,6 +592,14 @@ export class BattleScene extends Phaser.Scene {
 
   onPlayerBulletHitsEnemy(bullet, enemy) {
     if (!bullet.active || !enemy.active) return;
+    if (bullet.pierce) {
+      // 激光弹贯穿：同一目标只结算一次
+      if (bullet.hits && bullet.hits.has(enemy)) return;
+      if (bullet.hits) bullet.hits.add(enemy);
+      this.spark(enemy.x, enemy.y + 8, 0.55);
+      enemy.hit(3);
+      return;
+    }
     bullet.disableBody(true, true);
     this.spark(enemy.x, enemy.y + 8, 0.5);
     enemy.hit(1);
@@ -592,6 +656,9 @@ export class BattleScene extends Phaser.Scene {
     } else if (type === 'shield') {
       player.activateShield(this.time.now, PLAYER.shieldMs);
       this.floatText(x, y, '护盾展开', '#7ea8ff');
+    } else if (type === 'laser') {
+      player.activateLaser(this.time.now, PLAYER.laserMs);
+      this.floatText(x, y, '激光武装', '#c084ff');
     } else {
       this.bombs = Math.min(PLAYER.maxBombs, this.bombs + 1);
       this.floatText(x, y, '炸弹 +1', '#ffd75e');
@@ -613,7 +680,7 @@ export class BattleScene extends Phaser.Scene {
       this.boss = null;
       this.bossBar.setVisible(false);
       this.bossLabel.setVisible(false);
-      this.nextBossAt = this.elapsed + DIFFICULTY.bossEvery * 1000;
+      this.nextBossAt = this.elapsed + this.diffConfig.bossEvery * 1000;
       this.cameras.main.shake(620, 0.02);
       this.cameras.main.flash(340, 255, 210, 120);
       this.bigExplosion(enemy.x, enemy.y);

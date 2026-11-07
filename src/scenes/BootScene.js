@@ -22,9 +22,9 @@ export class BootScene extends Phaser.Scene {
       'bg_space', 'stars_far', 'stars_near', 'vignette',
       'player', 'flame', 'shield',
       'enemy_scout', 'enemy_striker', 'enemy_tank', 'boss',
-      'bullet_player', 'bullet_enemy', 'bullet_boss',
+      'bullet_player', 'bullet_enemy', 'bullet_boss', 'laser_beam',
       'explosion_0', 'explosion_4', 'spark', 'glow', 'shockwave',
-      'powerup_power', 'powerup_shield', 'powerup_bomb',
+      'powerup_power', 'powerup_shield', 'powerup_bomb', 'powerup_laser',
       'icon_life', 'icon_bomb', 'btn_bomb'
     ];
     for (const key of required) {

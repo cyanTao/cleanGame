@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import {
   clampWeapon, weaponSpread, fireIntervalFor, difficultyAt, bossHpFor,
   spawnWeights, pickWeighted, pickPowerup, scoreFor, formatScore, formatTime,
-  loadBest, saveBest
+  loadBest, saveBest, loadLives, saveLives, loadMode, saveMode
 } from '../src/systems/gameLogic.js';
-import { PLAYER, DIFFICULTY } from '../src/config.js';
+import { PLAYER, DIFFICULTY, INSANE } from '../src/config.js';
 
 describe('武器等级与弹道', () => {
   it('等级钳制在 1..5', () => {
@@ -66,6 +66,17 @@ describe('难度曲线', () => {
     expect(bossHpFor(0)).toBe(DIFFICULTY.bossHpBase);
     expect(bossHpFor(2)).toBe(DIFFICULTY.bossHpBase + DIFFICULTY.bossHpStep * 2);
   });
+
+  it('变态模式：刷怪更密、速度上限更高、Boss 更硬', () => {
+    const normal = difficultyAt(30, false);
+    const insane = difficultyAt(30, true);
+    expect(insane.spawnInterval).toBeLessThan(normal.spawnInterval);
+    expect(insane.speedMul).toBeGreaterThan(normal.speedMul);
+    expect(insane.wave).toBeGreaterThan(normal.wave);
+    expect(difficultyAt(9999, true).spawnInterval).toBe(INSANE.spawnMin);
+    expect(bossHpFor(0, true)).toBe(INSANE.bossHpBase);
+    expect(bossHpFor(0, true)).toBeGreaterThan(bossHpFor(0, false));
+  });
 });
 
 describe('刷怪权重与掉落', () => {
@@ -84,10 +95,11 @@ describe('刷怪权重与掉落', () => {
     expect(pickWeighted(entries, () => 0.999999)).toBe(entries[entries.length - 1].type);
   });
 
-  it('道具概率分布覆盖三种类型', () => {
+  it('道具概率分布覆盖四种类型', () => {
     expect(pickPowerup(() => 0.1)).toBe('power');
-    expect(pickPowerup(() => 0.75)).toBe('shield');
-    expect(pickPowerup(() => 0.95)).toBe('bomb');
+    expect(pickPowerup(() => 0.6)).toBe('shield');
+    expect(pickPowerup(() => 0.8)).toBe('bomb');
+    expect(pickPowerup(() => 0.95)).toBe('laser');
   });
 
   it('击毁得分与配置一致', () => {
@@ -122,5 +134,33 @@ describe('格式化与最高分存档', () => {
     expect(loadBest(storage)).toBe(4321);
     storage.setItem('skyStrike.best', 'not-a-number');
     expect(loadBest(storage)).toBe(0);
+  });
+
+  it('生命数可读写并钳制在 1..9', () => {
+    const store = new Map();
+    const storage = {
+      getItem: (k) => (store.has(k) ? store.get(k) : null),
+      setItem: (k, v) => store.set(k, v)
+    };
+    expect(loadLives(storage)).toBe(3);
+    saveLives(5, storage);
+    expect(loadLives(storage)).toBe(5);
+    saveLives(99, storage);
+    expect(loadLives(storage)).toBe(9);
+    saveLives(-3, storage);
+    expect(loadLives(storage)).toBe(1);
+  });
+
+  it('难度模式可读写，默认普通', () => {
+    const store = new Map();
+    const storage = {
+      getItem: (k) => (store.has(k) ? store.get(k) : null),
+      setItem: (k, v) => store.set(k, v)
+    };
+    expect(loadMode(storage)).toBe('normal');
+    saveMode('insane', storage);
+    expect(loadMode(storage)).toBe('insane');
+    saveMode('weird', storage);
+    expect(loadMode(storage)).toBe('normal');
   });
 });

@@ -8,11 +8,14 @@ export class Bullet extends Phaser.Physics.Arcade.Image {
     this.setActive(false).setVisible(false);
   }
 
-  fire(x, y, vx, vy, texture = 'bullet_player', scale = 1) {
+  fire(x, y, vx, vy, texture = 'bullet_player', scale = 1, pierce = false) {
     this.setTexture(texture);
     this.setScale(scale);
     this.enableBody(true, x, y, true, true);
-    this.setDepth(texture === 'bullet_player' ? 21 : 12);
+    // 激光弹：贯穿敌机，同一目标只结算一次伤害
+    this.pierce = pierce;
+    this.hits = pierce ? new Set() : null;
+    this.setDepth(pierce ? 22 : texture === 'bullet_player' ? 21 : 12);
     this.setBlendMode(Phaser.BlendModes.ADD);
     this.setRotation(Math.atan2(vy, vx) + Math.PI / 2);
     this.setVelocity(vx, vy);

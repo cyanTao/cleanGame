@@ -11,7 +11,9 @@ export const SCENE = {
 
 export const STORAGE_KEYS = {
   best: 'skyStrike.best',
-  mute: 'skyStrike.mute'
+  mute: 'skyStrike.mute',
+  lives: 'skyStrike.lives',
+  mode: 'skyStrike.mode'
 };
 
 export const PLAYER = {
@@ -28,7 +30,8 @@ export const PLAYER = {
   respawnDelay: 900,
   startWeapon: 1,
   maxWeapon: 5,
-  shieldMs: 6000
+  shieldMs: 6000,
+  laserMs: 8000        // 激光弹持续时间
 };
 
 export const ENEMY = {
@@ -50,6 +53,25 @@ export const DIFFICULTY = {
   bossHpStep: 180,
   maxEnemies: 34
 };
+
+// 变态模式：更密的敌潮、更快的弹雨、更硬的 Boss
+export const INSANE = {
+  spawnBase: 620,
+  spawnMin: 150,
+  spawnRampPerSec: 34,
+  speedRampPerSec: 0.011,
+  speedCap: 2.7,
+  waveSeconds: 12,
+  bossEvery: 40,
+  bossHpBase: 520,
+  bossHpStep: 300,
+  maxEnemies: 56,
+  fireIntervalMul: 0.55,  // 敌机开火间隔倍率
+  bossAttackMs: 520       // Boss 弹幕间隔
+};
+
+// 普通模式下的对应默认
+export const NORMAL_EXTRAS = { fireIntervalMul: 1, bossAttackMs: 820 };
 
 export const POWERUP = {
   dropChanceBonus: 0,

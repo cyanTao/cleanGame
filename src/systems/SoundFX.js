@@ -51,6 +51,12 @@ class SoundFX {
           this.tone(880, 520, 0.055, 'square', 0.016);
         }
         break;
+      case 'laser':
+        this.shotCounter++;
+        if (this.shotCounter % 2 === 0) {
+          this.tone(240, 980, 0.07, 'sawtooth', 0.013);
+        }
+        break;
       case 'enemyShoot':
         this.tone(300, 170, 0.08, 'sawtooth', 0.012);
         break;

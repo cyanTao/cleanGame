@@ -86,7 +86,8 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.x = VIEW.width / 2 + Math.sin(t / 1200) * 142;
 
     const enraged = this.hp < this.maxHp * 0.5;
-    this.attackInterval = enraged ? 560 : 820;
+    const base = this.scene.bossAttackMs || 820;
+    this.attackInterval = enraged ? Math.round(base * 0.68) : base;
     this.bossAttackAcc += delta;
     if (this.bossAttackAcc >= this.attackInterval) {
       this.bossAttackAcc = 0;
@@ -99,7 +100,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     const player = this.scene.player;
     if (!player || !player.alive) return;
     this.fireAcc += delta;
-    if (this.fireAcc >= cfg.fire) {
+    if (this.fireAcc >= cfg.fire * (this.scene.fireIntervalMul || 1)) {
       this.fireAcc = 0;
       shoot();
     }

@@ -1,7 +1,7 @@
 // ===== 标题场景 =====
 import Phaser from 'phaser';
 import { SCENE, VIEW, FONT, COLORS } from '../config.js';
-import { loadBest, formatScore } from '../systems/gameLogic.js';
+import { loadBest, formatScore, loadLives, saveLives, loadMode, saveMode } from '../systems/gameLogic.js';
 import { sfx } from '../systems/SoundFX.js';
 import { createButton, createIconButton } from '../systems/ui.js';
 
@@ -29,26 +29,29 @@ export class TitleScene extends Phaser.Scene {
 
     // 最高分
     const best = loadBest();
-    this.add.text(VIEW.width / 2, 606, '最高分  BEST', {
+    this.add.text(VIEW.width / 2, 584, '最高分  BEST', {
       fontFamily: FONT, fontSize: '13px', color: '#7f8db4'
     }).setOrigin(0.5).setDepth(20);
-    this.add.text(VIEW.width / 2, 632, formatScore(best), {
+    this.add.text(VIEW.width / 2, 610, formatScore(best), {
       fontFamily: FONT, fontSize: '28px', fontStyle: 'bold', color: '#ffd75e'
     }).setOrigin(0.5).setDepth(20);
 
+    this.lives = loadLives();
+    this.mode = loadMode();
+    this.createSettings();
+
     createButton(this, {
-      x: VIEW.width / 2, y: 700, w: 286, h: 64,
+      x: VIEW.width / 2, y: 830, w: 286, h: 60,
       label: '开 始 游 戏', fontSize: 26, depth: 30,
       onClick: () => this.startGame()
     });
 
     const hints = [
-      '拖动屏幕 / 方向键 / WASD 移动 · 自动开火',
-      'K 或右下 BOMB 清屏 · P 暂停 · M 静音',
-      '每 60 秒迎战 BOSS · 挑战你的最高分'
+      '拖动屏幕 / 方向键 / WASD 移动 · 自动开火 · K 清屏 · P 暂停',
+      '拾取 L 激光弹贯穿敌机 · 变态模式 = 弹幕地狱'
     ];
     hints.forEach((line, i) => {
-      this.add.text(VIEW.width / 2, 842 + i * 24, line, {
+      this.add.text(VIEW.width / 2, 894 + i * 24, line, {
         fontFamily: FONT, fontSize: '13px', color: '#8fa3c8'
       }).setOrigin(0.5).setDepth(20);
     });
@@ -65,9 +68,9 @@ export class TitleScene extends Phaser.Scene {
       this.muteBtn.setText(this.muteLabel());
     });
 
-    // 点击屏幕任意位置开始（右上角音效按钮除外）
-    this.input.on('pointerdown', (pointer) => {
-      if (pointer.y < 70 && pointer.x > VIEW.width - 140) return;
+    // 点击屏幕任意位置开始（按钮等可交互对象除外）
+    this.input.on('pointerdown', (pointer, currentlyOver) => {
+      if (currentlyOver && currentlyOver.length > 0) return;
       this.startGame();
     });
 
@@ -121,16 +124,73 @@ export class TitleScene extends Phaser.Scene {
 
   createPowerupHints() {
     const items = [
-      { x: 152, key: 'powerup_power', label: '强化火力', color: '#63f2ff' },
-      { x: 270, key: 'powerup_shield', label: '能量护盾', color: '#7ea8ff' },
-      { x: 388, key: 'powerup_bomb', label: '清屏炸弹', color: '#ffd75e' }
+      { x: 108, key: 'powerup_power', label: '强化火力', color: '#63f2ff' },
+      { x: 216, key: 'powerup_shield', label: '能量护盾', color: '#7ea8ff' },
+      { x: 324, key: 'powerup_bomb', label: '清屏炸弹', color: '#ffd75e' },
+      { x: 432, key: 'powerup_laser', label: '激光贯穿', color: '#c084ff' }
     ];
     items.forEach((it) => {
-      this.add.image(it.x, 770, it.key).setScale(0.78).setDepth(20);
-      this.add.text(it.x, 796, it.label, {
+      this.add.image(it.x, 648, it.key).setScale(0.72).setDepth(20);
+      this.add.text(it.x, 676, it.label, {
         fontFamily: FONT, fontSize: '12px', color: it.color
       }).setOrigin(0.5).setDepth(20);
     });
+  }
+
+  /** 开局设置：生命数 + 难度模式 */
+  createSettings() {
+    const cx = VIEW.width / 2;
+
+    this.add.text(cx - 116, 716, '生命', {
+      fontFamily: FONT, fontSize: '16px', color: '#8fa3c8'
+    }).setOrigin(1, 0.5).setDepth(30);
+    this.mkTextButton(cx - 66, 716, '−', () => this.changeLives(-1));
+    this.livesText = this.add.text(cx, 716, String(this.lives), {
+      fontFamily: FONT, fontSize: '26px', fontStyle: 'bold', color: '#ffd75e'
+    }).setOrigin(0.5).setDepth(30);
+    this.mkTextButton(cx + 66, 716, '+', () => this.changeLives(1));
+
+    this.add.text(cx - 116, 764, '难度', {
+      fontFamily: FONT, fontSize: '16px', color: '#8fa3c8'
+    }).setOrigin(1, 0.5).setDepth(30);
+    this.modeBtn = this.add.text(cx + 22, 764, this.modeLabel(), {
+      fontFamily: FONT, fontSize: '19px', fontStyle: 'bold',
+      color: this.modeColor(),
+      backgroundColor: 'rgba(12, 20, 44, 0.9)', padding: { x: 20, y: 7 }
+    }).setOrigin(0.5).setDepth(30).setInteractive({ useHandCursor: true });
+    this.modeBtn.on('pointerdown', () => this.toggleMode());
+  }
+
+  mkTextButton(x, y, label, onClick) {
+    const btn = this.add.text(x, y, label, {
+      fontFamily: FONT, fontSize: '22px', fontStyle: 'bold', color: '#cfe2ff',
+      backgroundColor: 'rgba(12, 20, 44, 0.9)', padding: { x: 13, y: 4 }
+    }).setOrigin(0.5).setDepth(30).setInteractive({ useHandCursor: true });
+    btn.on('pointerdown', onClick);
+    return btn;
+  }
+
+  changeLives(delta) {
+    this.lives = Math.max(1, Math.min(9, this.lives + delta));
+    saveLives(this.lives);
+    this.livesText.setText(String(this.lives));
+    sfx.play('ui');
+  }
+
+  modeLabel() {
+    return this.mode === 'insane' ? '变 态' : '普 通';
+  }
+
+  modeColor() {
+    return this.mode === 'insane' ? '#ff5a5a' : '#cfe2ff';
+  }
+
+  toggleMode() {
+    this.mode = this.mode === 'insane' ? 'normal' : 'insane';
+    saveMode(this.mode);
+    this.modeBtn.setText(this.modeLabel());
+    this.modeBtn.setColor(this.modeColor());
+    sfx.play('ui');
   }
 
   flyBy() {

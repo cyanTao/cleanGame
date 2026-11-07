@@ -612,6 +612,19 @@ export function createGameTextures(scene) {
   addCanvas(scene, 'bullet_boss', 20, 20, (ctx, w, h) =>
     drawEnemyBullet(ctx, w, h, '#ffd7ff', '#c084ff', 'rgba(180, 90, 255, 0.9)'));
 
+  // 激光弹：贯穿光束（白芯 + 青光晕）
+  addCanvas(scene, 'laser_beam', 14, 220, (ctx, w, h) => {
+    ctx.shadowColor = 'rgba(99, 242, 255, 0.9)';
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = 'rgba(99, 242, 255, 0.4)';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = 'rgba(190, 250, 255, 0.8)';
+    ctx.fillRect(w * 0.28, 0, w * 0.44, h);
+    ctx.shadowBlur = 4;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(w * 0.42, 0, w * 0.16, h);
+  });
+
   for (let i = 0; i < 5; i++) {
     addCanvas(scene, `explosion_${i}`, 96, 96, (ctx, w, h) => drawExplosion(ctx, w, h, i / 4));
   }
@@ -622,9 +635,10 @@ export function createGameTextures(scene) {
   const powerColors = {
     power: '#63f2ff',
     shield: '#7ea8ff',
-    bomb: '#ffd75e'
+    bomb: '#ffd75e',
+    laser: '#c084ff'
   };
-  const powerLetters = { power: 'P', shield: 'S', bomb: 'B' };
+  const powerLetters = { power: 'P', shield: 'S', bomb: 'B', laser: 'L' };
   for (const type of Object.keys(powerColors)) {
     addCanvas(scene, `powerup_${type}`, 44, 44, (ctx, w, h) => {
       drawPowerup(ctx, w, h, powerColors[type]);

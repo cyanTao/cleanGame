@@ -1,5 +1,5 @@
 // ===== 纯游戏逻辑：武器弹道 / 难度曲线 / 掉落 / 存档 =====
-import { PLAYER, DIFFICULTY, ENEMY, STORAGE_KEYS } from '../config.js';
+import { PLAYER, DIFFICULTY, INSANE, ENEMY, STORAGE_KEYS } from '../config.js';
 
 /** 武器等级钳制到 1..5 */
 export function clampWeapon(level) {
@@ -33,23 +33,22 @@ export function fireIntervalFor(level) {
   return Math.max(80, PLAYER.fireInterval - (clampWeapon(level) - 1) * 8);
 }
 
-/** 难度曲线：随生存秒数提升刷怪速度、敌机速度与波次 */
-export function difficultyAt(seconds) {
+/** 难度曲线：随生存秒数提升刷怪速度、敌机速度与波次（insane 走变态配置） */
+export function difficultyAt(seconds, insane = false) {
   const t = Math.max(0, Number(seconds) || 0);
+  const c = insane ? INSANE : DIFFICULTY;
   return {
-    spawnInterval: Math.max(
-      DIFFICULTY.spawnMin,
-      DIFFICULTY.spawnBase - t * DIFFICULTY.spawnRampPerSec
-    ),
-    speedMul: Math.min(DIFFICULTY.speedCap, 1 + t * DIFFICULTY.speedRampPerSec),
-    wave: Math.floor(t / DIFFICULTY.waveSeconds) + 1,
-    bossIndex: Math.floor(t / DIFFICULTY.bossEvery)
+    spawnInterval: Math.max(c.spawnMin, c.spawnBase - t * c.spawnRampPerSec),
+    speedMul: Math.min(c.speedCap, 1 + t * c.speedRampPerSec),
+    wave: Math.floor(t / c.waveSeconds) + 1,
+    bossIndex: Math.floor(t / c.bossEvery)
   };
 }
 
 /** Boss 血量随登场次数成长 */
-export function bossHpFor(index) {
-  return DIFFICULTY.bossHpBase + Math.max(0, Math.floor(index)) * DIFFICULTY.bossHpStep;
+export function bossHpFor(index, insane = false) {
+  const c = insane ? INSANE : DIFFICULTY;
+  return c.bossHpBase + Math.max(0, Math.floor(index)) * c.bossHpStep;
 }
 
 /** 按波次给出敌机权重（越后期越偏向强敌） */
@@ -74,12 +73,13 @@ export function pickWeighted(entries, random = Math.random) {
   return entries[entries.length - 1].type;
 }
 
-/** 道具类型：力量 / 护盾 / 炸弹 */
+/** 道具类型：力量 / 护盾 / 炸弹 / 激光 */
 export function pickPowerup(random = Math.random) {
   const r = random();
-  if (r < 0.66) return 'power';
-  if (r < 0.88) return 'shield';
-  return 'bomb';
+  if (r < 0.5) return 'power';
+  if (r < 0.72) return 'shield';
+  if (r < 0.86) return 'bomb';
+  return 'laser';
 }
 
 /** 击毁得分 */
@@ -114,6 +114,41 @@ export function saveBest(value, storage = safeStorage()) {
     storage.setItem(STORAGE_KEYS.best, String(Math.max(0, Math.floor(value))));
   } catch {
     /* 隐私模式等场景忽略 */
+  }
+}
+
+/** 生命数选择：1..9，默认 3 */
+export function loadLives(storage = safeStorage()) {
+  try {
+    const v = parseInt(storage.getItem(STORAGE_KEYS.lives), 10);
+    return Math.max(1, Math.min(9, v || 3));
+  } catch {
+    return 3;
+  }
+}
+
+export function saveLives(value, storage = safeStorage()) {
+  try {
+    storage.setItem(STORAGE_KEYS.lives, String(Math.max(1, Math.min(9, Math.floor(value)))));
+  } catch {
+    /* ignore */
+  }
+}
+
+/** 难度模式：normal / insane */
+export function loadMode(storage = safeStorage()) {
+  try {
+    return storage.getItem(STORAGE_KEYS.mode) === 'insane' ? 'insane' : 'normal';
+  } catch {
+    return 'normal';
+  }
+}
+
+export function saveMode(mode, storage = safeStorage()) {
+  try {
+    storage.setItem(STORAGE_KEYS.mode, mode === 'insane' ? 'insane' : 'normal');
+  } catch {
+    /* ignore */
   }
 }
 

@@ -27,6 +27,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     this.invulnUntil = 0;
     this.shieldUntil = 0;
+    this.laserUntil = 0;
     this.alive = true;
   }
 
@@ -92,6 +93,14 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.shieldUntil = Math.max(this.shieldUntil, time + duration);
   }
 
+  hasLaser(time) {
+    return this.alive && time < this.laserUntil;
+  }
+
+  activateLaser(time, duration) {
+    this.laserUntil = Math.max(this.laserUntil, time + duration);
+  }
+
   /** 被击中隐身，等待复活 */
   hide() {
     this.alive = false;
@@ -101,6 +110,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.flame.setVisible(false);
     this.shieldSprite.setVisible(false);
     this.shieldUntil = 0;
+    this.laserUntil = 0;
     this.setAngle(0);
     this.setAlpha(1);
   }
