@@ -1,93 +1,171 @@
-// ===== 标题场景：模式选择（键盘 / 点击） =====
+// ===== 标题场景 =====
 import Phaser from 'phaser';
-import { SCENE, MECHAS, VIEW } from '../config.js';
-import { SPRITE_SCALE } from '../data/sprites.js';
+import { SCENE, VIEW, FONT, COLORS } from '../config.js';
+import { loadBest, formatScore } from '../systems/gameLogic.js';
+import { sfx } from '../systems/SoundFX.js';
+import { createButton, createIconButton } from '../systems/ui.js';
 
 export class TitleScene extends Phaser.Scene {
-  constructor() { super(SCENE.TITLE); }
+  constructor() {
+    super(SCENE.TITLE);
+  }
 
   create() {
-    this.add.image(0, 0, 'sky').setOrigin(0).setDisplaySize(VIEW.width, VIEW.groundY);
-    this.spawnStars();
+    this.starting = false;
 
-    // 标题
-    this.add.text(VIEW.width / 2, 96, '机甲擂台', {
-      fontFamily: 'Courier New, monospace', fontSize: '64px', fontStyle: 'bold',
-      color: '#ffd75e', stroke: '#10141f', strokeThickness: 8
+    this.add.image(0, 0, 'bg_space').setOrigin(0).setDepth(0);
+    this.starsFar = this.add.tileSprite(0, 0, VIEW.width, VIEW.height, 'stars_far')
+      .setOrigin(0).setDepth(1).setAlpha(0.72);
+    this.starsNear = this.add.tileSprite(0, 0, VIEW.width, VIEW.height, 'stars_near')
+      .setOrigin(0).setDepth(2).setAlpha(0.95);
+    this.add.image(0, 0, 'vignette').setOrigin(0).setDepth(3);
+
+    this.time.addEvent({ delay: 1200, loop: true, callback: this.flyBy, callbackScope: this });
+    this.flyBy();
+
+    this.createHero();
+    this.createTitle();
+    this.createPowerupHints();
+
+    // 最高分
+    const best = loadBest();
+    this.add.text(VIEW.width / 2, 606, '最高分  BEST', {
+      fontFamily: FONT, fontSize: '13px', color: '#7f8db4'
     }).setOrigin(0.5).setDepth(20);
-    this.add.text(VIEW.width / 2, 148, 'MECHA ARENA', {
-      fontFamily: 'Courier New, monospace', fontSize: '22px', fontStyle: 'bold',
-      color: '#8fb0f0', stroke: '#10141f', strokeThickness: 4
+    this.add.text(VIEW.width / 2, 632, formatScore(best), {
+      fontFamily: FONT, fontSize: '28px', fontStyle: 'bold', color: '#ffd75e'
     }).setOrigin(0.5).setDepth(20);
 
-    // 两台机甲展示（浮动）
-    const blu = this.add.image(260, VIEW.groundY, 'blu_idle')
-      .setOrigin(0.5, 1).setScale(SPRITE_SCALE + 1).setDepth(10);
-    const red = this.add.image(700, VIEW.groundY, 'red_idle')
-      .setOrigin(0.5, 1).setScale(SPRITE_SCALE + 1).setDepth(10).setFlipX(true);
-    this.tweens.add({ targets: blu, y: VIEW.groundY - 6, duration: 900, yoyo: true, repeat: -1, ease: 'sine.inout' });
-    this.tweens.add({ targets: red, y: VIEW.groundY - 6, duration: 900, yoyo: true, repeat: -1, ease: 'sine.inout', delay: 250 });
+    createButton(this, {
+      x: VIEW.width / 2, y: 700, w: 286, h: 64,
+      label: '开 始 游 戏', fontSize: 26, depth: 30,
+      onClick: () => this.startGame()
+    });
 
-    // 地面
-    this.drawGround();
-
-    // 菜单（键盘数字 / 点击均可）
-    const mkMenu = (y, label, mode) => {
-      const t = this.add.text(VIEW.width / 2, y, label, {
-        fontFamily: 'Courier New, monospace', fontSize: '28px', fontStyle: 'bold',
-        color: '#ffffff', backgroundColor: '#161c40', padding: { x: 18, y: 8 }
-      }).setOrigin(0.5).setDepth(20).setInteractive({ useHandCursor: true });
-      t.on('pointerover', () => t.setColor('#ffd75e'));
-      t.on('pointerout', () => t.setColor('#ffffff'));
-      t.on('pointerdown', () => this.scene.start(SCENE.BATTLE, { mode }));
-    };
-    mkMenu(268, '[1] 人机对战', 'pve');
-    mkMenu(324, '[2] 双人对战', 'pvp');
-
-    // 操作说明（触屏 / 键盘通用）
-    const help = [
-      `P1 ${MECHAS.blu.name}：A/D 移动  W 跳  J 攻击  K 防御  L 必杀（或点击屏幕按钮）`,
-      `P2 ${MECHAS.red.name}：←/→ 移动  ↑ 跳  1 攻击  2 防御  3 必杀`,
-      '能量满 100 可释放必杀 · 防御减伤 75% · 60 秒倒计时 HP 高者胜'
+    const hints = [
+      '拖动屏幕 / 方向键 / WASD 移动 · 自动开火',
+      'K 或右下 BOMB 清屏 · P 暂停 · M 静音',
+      '每 60 秒迎战 BOSS · 挑战你的最高分'
     ];
-    help.forEach((line, i) => {
-      this.add.text(VIEW.width / 2, 400 + i * 22, line, {
-        fontFamily: 'Courier New, monospace', fontSize: '14px', color: '#aebcd4'
+    hints.forEach((line, i) => {
+      this.add.text(VIEW.width / 2, 842 + i * 24, line, {
+        fontFamily: FONT, fontSize: '13px', color: '#8fa3c8'
       }).setOrigin(0.5).setDepth(20);
     });
 
-    this.keys = this.input.keyboard.addKeys('ONE,TWO,NUMPAD_ONE,NUMPAD_TWO');
+    this.muteBtn = createIconButton(this, VIEW.width - 40, 30, this.muteLabel(), () => {
+      sfx.toggleMute();
+      this.muteBtn.setText(this.muteLabel());
+    }, 40);
+
+    this.input.keyboard.on('keydown-ENTER', () => this.startGame());
+    this.input.keyboard.on('keydown-SPACE', () => this.startGame());
+    this.input.keyboard.on('keydown-M', () => {
+      sfx.toggleMute();
+      this.muteBtn.setText(this.muteLabel());
+    });
+
+    // 点击屏幕任意位置开始（右上角音效按钮除外）
+    this.input.on('pointerdown', (pointer) => {
+      if (pointer.y < 70 && pointer.x > VIEW.width - 140) return;
+      this.startGame();
+    });
+
+    this.cameras.main.fadeIn(260, 0, 0, 0);
   }
 
-  spawnStars() {
-    for (let i = 0; i < 70; i++) {
-      const star = this.add.image(
-        Phaser.Math.Between(0, VIEW.width),
-        Phaser.Math.Between(0, VIEW.groundY - 80), 'star'
-      ).setDepth(1).setAlpha(Phaser.Math.FloatBetween(0.3, 0.9));
-      this.tweens.add({
-        targets: star, alpha: 0.1, duration: Phaser.Math.Between(600, 1800),
-        yoyo: true, repeat: -1
-      });
-    }
+  muteLabel() {
+    return sfx.muted ? '音效 关' : '音效 开';
   }
 
-  drawGround() {
-    const g = this.add.graphics().setDepth(2);
-    g.fillStyle(0x1d2436, 1);
-    g.fillRect(0, VIEW.groundY, VIEW.width, VIEW.height - VIEW.groundY);
-    g.fillStyle(0x384286, 1);
-    g.fillRect(0, VIEW.groundY, VIEW.width, 4);
-    g.fillStyle(0x2b3f66, 1);
-    for (let x = 0; x < VIEW.width; x += 24) g.fillRect(x, VIEW.groundY + 4, 12, 3);
+  createHero() {
+    const hero = this.add.container(VIEW.width / 2, 508).setDepth(10);
+    const glow = this.add.image(0, 0, 'glow')
+      .setScale(2.6).setAlpha(0.34).setBlendMode(Phaser.BlendModes.ADD);
+    const ship = this.add.image(0, 0, 'player').setScale(1.85);
+    const flame = this.add.image(0, 34 * 1.85, 'flame')
+      .setScale(1.5).setBlendMode(Phaser.BlendModes.ADD);
+    hero.add([glow, flame, ship]);
+
+    this.tweens.add({
+      targets: hero, y: 492, duration: 1700, yoyo: true, repeat: -1, ease: 'sine.inout'
+    });
+    this.tweens.add({
+      targets: flame, scaleY: 2.1, alpha: 0.72,
+      duration: 130, yoyo: true, repeat: -1, ease: 'sine.inout'
+    });
   }
 
-  update() {
-    if (Phaser.Input.Keyboard.JustDown(this.keys.ONE) || Phaser.Input.Keyboard.JustDown(this.keys.NUMPAD_ONE)) {
-      this.scene.start(SCENE.BATTLE, { mode: 'pve' });
-    }
-    if (Phaser.Input.Keyboard.JustDown(this.keys.TWO) || Phaser.Input.Keyboard.JustDown(this.keys.NUMPAD_TWO)) {
-      this.scene.start(SCENE.BATTLE, { mode: 'pvp' });
-    }
+  createTitle() {
+    const cx = VIEW.width / 2;
+
+    const glow = this.add.text(cx, 208, '飞机大战', {
+      fontFamily: FONT, fontSize: '78px', fontStyle: 'bold', color: '#63f2ff'
+    }).setOrigin(0.5).setDepth(8).setAlpha(0.32).setBlendMode(Phaser.BlendModes.ADD);
+    glow.setShadow(0, 0, '#63f2ff', 34, true, true);
+
+    this.add.text(cx, 208, '飞机大战', {
+      fontFamily: FONT, fontSize: '78px', fontStyle: 'bold',
+      color: '#f2feff', stroke: '#07122e', strokeThickness: 12
+    }).setOrigin(0.5).setDepth(9).setShadow(0, 0, '#3de8ff', 20, true, true);
+
+    this.add.text(cx, 276, 'S K Y   S T R I K E', {
+      fontFamily: FONT, fontSize: '22px', fontStyle: 'bold', color: '#6ea8ff'
+    }).setOrigin(0.5).setDepth(9);
+
+    const line = this.add.graphics().setDepth(9);
+    line.lineStyle(2, 0x3d7bff, 0.6);
+    line.lineBetween(70, 276, 150, 276);
+    line.lineBetween(VIEW.width - 150, 276, VIEW.width - 70, 276);
+  }
+
+  createPowerupHints() {
+    const items = [
+      { x: 152, key: 'powerup_power', label: '强化火力', color: '#63f2ff' },
+      { x: 270, key: 'powerup_shield', label: '能量护盾', color: '#7ea8ff' },
+      { x: 388, key: 'powerup_bomb', label: '清屏炸弹', color: '#ffd75e' }
+    ];
+    items.forEach((it) => {
+      this.add.image(it.x, 770, it.key).setScale(0.78).setDepth(20);
+      this.add.text(it.x, 796, it.label, {
+        fontFamily: FONT, fontSize: '12px', color: it.color
+      }).setOrigin(0.5).setDepth(20);
+    });
+  }
+
+  flyBy() {
+    if (!this.scene.isActive()) return;
+    const keys = ['enemy_scout', 'enemy_striker', 'enemy_tank'];
+    const key = Phaser.Utils.Array.GetRandom(keys);
+    const img = this.add.image(
+      Phaser.Math.Between(40, VIEW.width - 40), -80, key
+    ).setScale(0.62).setAlpha(0.28).setDepth(4).setAngle(180);
+
+    this.tweens.add({
+      targets: img,
+      y: VIEW.height + 100,
+      x: img.x + Phaser.Math.Between(-70, 70),
+      angle: 180 + Phaser.Math.Between(-30, 30),
+      duration: Phaser.Math.Between(4200, 6800),
+      ease: 'linear',
+      onComplete: () => img.destroy()
+    });
+  }
+
+  startGame() {
+    if (this.starting) return;
+    this.starting = true;
+    sfx.unlock();
+    sfx.play('start');
+    this.cameras.main.fadeOut(220, 0, 0, 0);
+    this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
+      this.scene.start(SCENE.BATTLE);
+    });
+  }
+
+  update(time, delta) {
+    const dt = delta / 1000;
+    this.starsFar.tilePositionY -= 18 * dt;
+    this.starsNear.tilePositionY -= 54 * dt;
   }
 }

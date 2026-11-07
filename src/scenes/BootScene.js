@@ -1,28 +1,32 @@
-// ===== 启动场景：程序化生成全部纹理 =====
+// ===== 启动场景：生成全部程序化纹理与动画 =====
 import Phaser from 'phaser';
-import { SCENE, PALETTES } from '../config.js';
-import { MECHA_FRAMES, SPARK, SPARK_PALETTE } from '../data/sprites.js';
-import { registerCharArt, registerPoseDict, registerSkyGradient, registerStar } from '../systems/TextureFactory.js';
+import { SCENE } from '../config.js';
+import { createGameTextures } from '../systems/TextureFactory.js';
 
 export class BootScene extends Phaser.Scene {
-  constructor() { super(SCENE.BOOT); }
+  constructor() {
+    super(SCENE.BOOT);
+  }
 
   create() {
-    // 两台机甲：同一套字符画 + 不同调色板
-    for (const key of Object.keys(PALETTES)) {
-      registerPoseDict(this, key, MECHA_FRAMES, PALETTES[key]);
-    }
-    // 火花与星星
-    registerCharArt(this, 'spark', [SPARK], SPARK_PALETTE);
-    registerStar(this, 'star');
-    // 夜空渐变（16-bit 多层色带）
-    registerSkyGradient(this, 'sky', 480, [
-      '#070812', '#0b0d1f', '#10142e', '#161c40',
-      '#1d2550', '#252e62', '#2e3874', '#384286'
-    ]);
+    createGameTextures(this);
 
-    // 自检：关键纹理必须存在
-    const required = ['blu_idle', 'red_idle', 'blu_attackB', 'red_defend', 'blu_dead', 'spark', 'sky', 'star'];
+    this.anims.create({
+      key: 'explode',
+      frames: [0, 1, 2, 3, 4].map((i) => ({ key: `explosion_${i}` })),
+      frameRate: 20,
+      hideOnComplete: true
+    });
+
+    const required = [
+      'bg_space', 'stars_far', 'stars_near', 'vignette',
+      'player', 'flame', 'shield',
+      'enemy_scout', 'enemy_striker', 'enemy_tank', 'boss',
+      'bullet_player', 'bullet_enemy', 'bullet_boss',
+      'explosion_0', 'explosion_4', 'spark', 'glow', 'shockwave',
+      'powerup_power', 'powerup_shield', 'powerup_bomb',
+      'icon_life', 'icon_bomb', 'btn_bomb'
+    ];
     for (const key of required) {
       if (!this.textures.exists(key)) {
         throw new Error(`纹理自检失败：${key}`);

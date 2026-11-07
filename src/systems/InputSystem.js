@@ -1,53 +1,115 @@
-// ===== 键盘 + 触屏/鼠标 → 统一输入接口 =====
-import { KEYS } from '../config.js';
-import { TouchControls } from './TouchControls.js';
+// ===== 统一输入：键盘 / 指针拖动 =====
+import Phaser from 'phaser';
+import { VIEW } from '../config.js';
+
+export function isTouchDevice() {
+  return typeof window !== 'undefined' &&
+    ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+}
 
 /**
- * 统一输入接口：getState() → { left, right, jump, attack, defend, special }
- * jump/attack/special 为边沿触发（本帧刚按下）
- * 虚拟按键始终显示：触屏用手指、桌面用鼠标均可点击（控制 P1）
+ * 键盘：方向键 / WASD 移动，K/X 炸弹，P 暂停，M 静音
+ * 指针：按住并拖动即可移动战机（相对屏幕绝对跟随，手指上方偏移避免遮挡）
  */
 export class InputSystem {
   constructor(scene) {
-    const k = scene.input.keyboard;
-    this.map = {
-      p1: k.addKeys(KEYS.p1),
-      p2: k.addKeys(KEYS.p2)
-    };
-    this.prev = { p1: {}, p2: {} };
-    this.touch = new TouchControls(scene);
+    this.scene = scene;
+    this.enabled = true;
+    this.pointerTarget = null;
+    this.blocks = [];
+
+    this.keys = scene.input.keyboard.addKeys({
+      up: 'UP',
+      down: 'DOWN',
+      left: 'LEFT',
+      right: 'RIGHT',
+      w: 'W',
+      a: 'A',
+      s: 'S',
+      d: 'D',
+      bomb: 'K',
+      bombAlt: 'X',
+      pause: 'P',
+      mute: 'M'
+    });
+
+    scene.input.on('pointerdown', this.onPointerDown, this);
+    scene.input.on('pointermove', this.onPointerMove, this);
+    scene.input.on('pointerup', this.onPointerUp, this);
+    scene.input.on('pointerupoutside', this.onPointerUp, this);
   }
 
-  /** @param {'p1'|'p2'} player */
-  getState(player) {
-    const m = this.map[player];
-    const prev = this.prev[player];
-    const down = (key) => key.isDown;
-    const justDown = (key, name) => {
-      const now = down(key);
-      const was = prev[name] || false;
-      prev[name] = now;
-      return now && !was;
-    };
-    const s = {
-      left: down(m.left),
-      right: down(m.right),
-      jump: justDown(m.jump, 'jump'),
-      attack: justDown(m.attack, 'attack'),
-      defend: down(m.defend),
-      special: justDown(m.special, 'special')
-    };
+  /** 屏蔽 UI 按钮区域，避免拖动战机时误触 */
+  addBlockCircle(x, y, r) {
+    this.blocks.push({ type: 'circle', x, y, r });
+  }
 
-    // 合并触屏虚拟按键（仅 P1）
-    const t = this.touch;
-    if (player === 'p1' && t) {
-      s.left = s.left || t.held.left;
-      s.right = s.right || t.held.right;
-      s.defend = s.defend || t.held.defend;
-      s.jump = s.jump || t.consume('jump');
-      s.attack = s.attack || t.consume('attack');
-      s.special = s.special || t.consume('special');
+  addBlockRect(x, y, w, h) {
+    this.blocks.push({ type: 'rect', x, y, w, h });
+  }
+
+  isBlocked(x, y) {
+    return this.blocks.some((b) => {
+      if (b.type === 'circle') {
+        return Phaser.Math.Distance.Between(x, y, b.x, b.y) <= b.r;
+      }
+      return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
+    });
+  }
+
+  onPointerDown(pointer) {
+    if (!this.enabled) return;
+    if (this.isBlocked(pointer.x, pointer.y)) return;
+    this.pointerTarget = {
+      x: Phaser.Math.Clamp(pointer.x, 24, VIEW.width - 24),
+      y: Phaser.Math.Clamp(pointer.y - 36, 90, VIEW.height - 40)
+    };
+  }
+
+  onPointerMove(pointer) {
+    if (!this.enabled || !this.pointerTarget || !pointer.isDown) return;
+    if (this.isBlocked(pointer.x, pointer.y)) return;
+    this.pointerTarget = {
+      x: Phaser.Math.Clamp(pointer.x, 24, VIEW.width - 24),
+      y: Phaser.Math.Clamp(pointer.y - 36, 90, VIEW.height - 40)
+    };
+  }
+
+  onPointerUp() {
+    this.pointerTarget = null;
+  }
+
+  /** 归一化移动向量 */
+  getMoveVector() {
+    const k = this.keys;
+    let x = 0;
+    let y = 0;
+    if (k.left.isDown || k.a.isDown) x -= 1;
+    if (k.right.isDown || k.d.isDown) x += 1;
+    if (k.up.isDown || k.w.isDown) y -= 1;
+    if (k.down.isDown || k.s.isDown) y += 1;
+    if (x !== 0 && y !== 0) {
+      const inv = Math.SQRT1_2;
+      x *= inv;
+      y *= inv;
     }
-    return s;
+    return { x, y };
+  }
+
+  getPointerTarget() {
+    return this.pointerTarget;
+  }
+
+  justBomb() {
+    return Phaser.Input.Keyboard.JustDown(this.keys.bomb) ||
+      Phaser.Input.Keyboard.JustDown(this.keys.bombAlt);
+  }
+
+  justPause() {
+    return Phaser.Input.Keyboard.JustDown(this.keys.pause);
+  }
+
+  justMute() {
+    return Phaser.Input.Keyboard.JustDown(this.keys.mute);
   }
 }

@@ -1,70 +1,78 @@
-// ===== 全局配置：战斗数值 / 键位 / 调色板 =====
+// ===== 全局配置：视口 / 玩家 / 敌机 / 难度 =====
 
-export const VIEW = { width: 960, height: 540, groundY: 480 };
+export const VIEW = { width: 540, height: 960 };
 
-export const PHYSICS = { gravity: 1400, jumpVelocity: 620 };
-
-export const MECHAS = {
-  blu: {
-    name: 'BLU-07「蓝影」',
-    paletteKey: 'blu',
-    stats: { hp: 100, speed: 200, damage: 8, specialDamage: 25 }
-  },
-  red: {
-    name: 'RED-99「赤焰」',
-    paletteKey: 'red',
-    stats: { hp: 100, speed: 170, damage: 10, specialDamage: 25 }
-  }
+export const SCENE = {
+  BOOT: 'Boot',
+  TITLE: 'Title',
+  BATTLE: 'Battle',
+  GAMEOVER: 'GameOver'
 };
 
-export const COMBAT = {
-  energyMax: 100,
-  energyOnHit: 15,      // 攻击命中获得能量
-  energyOnHurt: 8,      // 被击中获得能量
-  attackWindup: 120,    // 轻攻击前摇 ms
-  attackActive: 100,    // 命中判定窗 ms
-  attackRecover: 200,   // 后摇 ms
-  specialWindup: 220,
-  specialActive: 150,
-  specialRecover: 300,
-  blockReduce: 0.75,          // 防御减伤（普通攻击）
-  specialBlockReduce: 0.5,    // 防御中受必杀减伤
-  defendSpeedFactor: 0.3,     // 防御移速系数
-  hitstun: 220,         // 受击硬直 ms
-  knockback: 260,       // 击退速度
-  specialKnockback: 420,
-  roundTime: 60,        // 回合倒计时（秒）
-  hitboxOffset: 40,     // 攻击判定框中心与自身距离
-  hitboxSize: { w: 46, h: 60 },
-  specialHitboxSize: { w: 70, h: 70 }
+export const STORAGE_KEYS = {
+  best: 'skyStrike.best',
+  mute: 'skyStrike.mute'
 };
 
-export const KEYS = {
-  p1: { left: 'A', right: 'D', jump: 'W', attack: 'J', defend: 'K', special: 'L' },
-  p2: { left: 'LEFT', right: 'RIGHT', jump: 'UP', attack: 'NUMPAD_ONE', defend: 'NUMPAD_TWO', special: 'NUMPAD_THREE' }
+export const PLAYER = {
+  speed: 430,          // 键盘移动速度 px/s
+  pointerSpeed: 720,   // 指针跟随速度 px/s
+  fireInterval: 132,   // 基础射击间隔 ms（随武器等级缩短）
+  bulletSpeed: 980,
+  startLives: 3,
+  maxLives: 5,
+  startBombs: 2,
+  maxBombs: 5,
+  invulnMs: 2000,      // 复活无敌
+  hitRadius: 10,       // 判定圈（比机身小，手感友好）
+  respawnDelay: 900,
+  startWeapon: 1,
+  maxWeapon: 5,
+  shieldMs: 6000
 };
 
-// 16-bit 调色板：字符 → 颜色
-// O 轮廓 | D 深甲 | M 中甲 | L 亮甲 | E 眼/天线 | V 能量核 | J 关节 | S 盾
-export const PALETTES = {
-  blu: {
-    O: '#10141f', D: '#2b3f66', M: '#4763a8', L: '#8fb0f0',
-    E: '#4df0ff', V: '#ffd75e', J: '#1d2436', S: '#aebcd4'
-  },
-  red: {
-    O: '#1c0f12', D: '#6e2734', M: '#a4434f', L: '#e08a74',
-    E: '#ffb03a', V: '#7cf5d8', J: '#2a1519', S: '#cfd6de'
-  }
+export const ENEMY = {
+  scout:   { texture: 'enemy_scout',   hp: 1,  speed: 200, score: 100, fire: 0,    radius: 15, drop: 0.06 },
+  striker: { texture: 'enemy_striker', hp: 4,  speed: 130, score: 250, fire: 1600, radius: 18, drop: 0.22 },
+  tank:    { texture: 'enemy_tank',    hp: 12, speed: 72,  score: 500, fire: 2100, radius: 25, drop: 0.55 },
+  boss:    { texture: 'boss',          hp: 320, speed: 80, score: 6000, fire: 900, radius: 72, drop: 1 }
 };
 
-// AI 性格
-export const AI = {
-  tick: 200,            // 决策间隔 ms
-  attackRange: 95,      // 进入攻击意图的距离
-  defendRange: 130,     // 触发防御反应的距离
-  aggression: 0.55,     // 攻击欲
-  jumpChance: 0.10,
-  retreatChance: 0.12
+export const DIFFICULTY = {
+  spawnBase: 1150,       // 初始刷怪间隔 ms
+  spawnMin: 300,         // 最短刷怪间隔
+  spawnRampPerSec: 20,   // 每秒缩短的间隔
+  speedRampPerSec: 0.006,
+  speedCap: 1.8,
+  waveSeconds: 20,
+  bossEvery: 60,         // 每 60 秒出现 Boss
+  bossHpBase: 320,
+  bossHpStep: 180,
+  maxEnemies: 34
 };
 
-export const SCENE = { BOOT: 'Boot', TITLE: 'Title', BATTLE: 'Battle', GAMEOVER: 'GameOver' };
+export const POWERUP = {
+  dropChanceBonus: 0,
+  bombDamage: 999,       // 清屏炸弹对普通敌机
+  bombBossDamage: 120,
+  shieldMs: PLAYER.shieldMs
+};
+
+// 像素霓虹调色（用于程序化绘制与 UI）
+export const COLORS = {
+  bgTop: '#04050d',
+  bgBottom: '#0b1230',
+  cyan: 0x63f2ff,
+  blue: 0x3d7bff,
+  ice: 0xd9fbff,
+  red: 0xff5a5a,
+  orange: 0xffb03a,
+  green: 0x9dff6b,
+  purple: 0xc084ff,
+  gold: 0xffd75e,
+  ink: 0x070a16,
+  hud: '#dfe9ff',
+  dim: '#7f8db4'
+};
+
+export const FONT = "'Courier New', 'Microsoft YaHei', 'PingFang SC', monospace";

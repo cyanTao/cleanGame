@@ -1,6 +1,6 @@
 // ===== 入口：Phaser.Game 配置 =====
 import Phaser from 'phaser';
-import { VIEW, PHYSICS, SCENE } from './config.js';
+import { VIEW } from './config.js';
 import { BootScene } from './scenes/BootScene.js';
 import { TitleScene } from './scenes/TitleScene.js';
 import { BattleScene } from './scenes/BattleScene.js';
@@ -11,8 +11,9 @@ const game = new Phaser.Game({
   parent: 'game',
   width: VIEW.width,
   height: VIEW.height,
-  backgroundColor: '#06070f',
-  pixelArt: true,
+  backgroundColor: '#04050d',
+  pixelArt: false,
+  roundPixels: true,
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH
@@ -20,7 +21,7 @@ const game = new Phaser.Game({
   physics: {
     default: 'arcade',
     arcade: {
-      gravity: { y: PHYSICS.gravity },
+      gravity: { y: 0 },
       debug: false
     }
   },
